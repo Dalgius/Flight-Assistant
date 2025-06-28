@@ -290,7 +290,6 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                         Clear Selection
                     </Button>
                     <Button variant="destructive" onClick={deleteMultiSelectedWaypoints}>
-                        <Trash2 className="w-4 h-4 mr-2" />
                         Delete Selected
                     </Button>
                 </div>
