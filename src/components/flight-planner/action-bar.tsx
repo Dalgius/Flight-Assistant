@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -24,7 +25,7 @@ const actions: { id: PanelType; label: string; icon: React.ElementType }[] = [
   { id: 'settings', label: 'Flight Settings', icon: SlidersHorizontal },
   { id: 'waypoints', label: 'Waypoints', icon: MapPin },
   { id: 'pois', label: 'Points of Interest', icon: LocateFixed },
-  { id: 'missions', label: 'Missions', icon: ClipboardList },
+  { id: 'missions', label: 'Survey Missions', icon: ClipboardList },
   { id: 'terrain', label: 'Terrain Tools', icon: MountainSnow },
   { id: 'file', label: 'File Operations', icon: FileText },
   { id: 'stats', label: 'Flight Statistics', icon: Gauge },
