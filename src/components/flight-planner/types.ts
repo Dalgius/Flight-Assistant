@@ -57,6 +57,9 @@ export interface FlightPlanSettings {
   flightSpeed: number;
   pathType: 'straight' | 'curved';
   homeElevationMsl: number;
+  altitudeAdaptationMode: 'relative' | 'agl' | 'amsl';
+  desiredAGL: number;
+  desiredAMSL: number;
 }
 
 export interface FlightStatistics {
