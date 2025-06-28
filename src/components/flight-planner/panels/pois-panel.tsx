@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState } from 'react';
@@ -7,8 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import type { PanelProps } from '../types';
-import { LocateFixed, Orbit, Trash2, HelpCircle } from 'lucide-react';
+import type { PanelProps, SurveyMission } from '../types';
+import { LocateFixed, Orbit, Trash2, HelpCircle, Pencil } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/tooltip"
 
 
-export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi }: PanelProps) {
+export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, deleteMission, editMission }: PanelProps) {
   const [poiName, setPoiName] = useState('');
   const [poiHeight, setPoiHeight] = useState(10);
   
@@ -71,21 +72,49 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi }: PanelProps)
           <CardTitle>POI List</CardTitle>
         </CardHeader>
         <CardContent>
-          <ScrollArea className="h-[150px] w-full pr-4">
+          <ScrollArea className="h-[250px] w-full pr-4">
             <div className="space-y-2">
-              {pois.map((poi: any) => (
-                <div key={poi.id} className="p-3 rounded-lg border flex items-center gap-3">
-                  <LocateFixed className="w-5 h-5 text-accent" />
-                  <div className="flex-1">
-                    <p className="font-semibold">{poi.name}</p>
-                    <p className="text-xs text-muted-foreground">Height: {poi.objectHeightAboveGround}m</p>
+              {pois.map((poi: any) => {
+                const orbitMission = missions.find((m: SurveyMission) => m.type === 'Orbit' && (m.parameters as any).poiId === poi.id);
+                
+                return (
+                  <div key={poi.id} className="p-3 rounded-lg border flex flex-col items-stretch gap-3">
+                    <div className="flex items-center gap-3">
+                      <LocateFixed className="w-5 h-5 text-accent shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-semibold">{poi.name}</p>
+                        <p className="text-xs text-muted-foreground">Height: {poi.objectHeightAboveGround}m</p>
+                      </div>
+                      <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deletePoi(poi.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    {orbitMission && editMission && deleteMission && (
+                      <div className="mt-2 pt-2 border-t border-border/50">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Orbit className="w-4 h-4 text-green-500" />
+                                <div>
+                                    <p className="text-sm font-medium">Orbit Mission</p>
+                                    <p className="text-xs text-muted-foreground">{orbitMission.waypointIds.length} Waypoints</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center">
+                                <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-primary" onClick={() => editMission(orbitMission.id)}>
+                                    <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deleteMission(orbitMission.id)}>
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deletePoi(poi.id)}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-               {pois.length === 0 && <p className="text-center text-muted-foreground py-8">No POIs added.</p>}
+                )
+              })}
+              {pois.length === 0 && <p className="text-center text-muted-foreground py-8">No POIs added.</p>}
             </div>
           </ScrollArea>
           <Separator className="my-4" />
