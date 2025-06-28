@@ -13,7 +13,14 @@ import { Camera, Trash2, Sailboat, MapPin } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { PanelProps, Waypoint, POI, HeadingControl, CameraAction } from '../types';
 
-const WaypointItem = ({ waypoint, isSelected, onSelect, isMultiSelected, onMultiSelectToggle }: {waypoint: Waypoint, isSelected: boolean, onSelect: (id: number) => void, isMultiSelected: boolean, onMultiSelectToggle: (id: number) => void}) => {
+const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSelected, onMultiSelectToggle }: {
+    waypoint: Waypoint, 
+    displayIndex: number,
+    isSelected: boolean, 
+    onSelect: (id: number) => void, 
+    isMultiSelected: boolean, 
+    onMultiSelectToggle: (id: number) => void
+}) => {
     
     const handleItemClick = (e: React.MouseEvent) => {
         // Prevent click from propagating to parent if checkbox is clicked
@@ -36,7 +43,7 @@ const WaypointItem = ({ waypoint, isSelected, onSelect, isMultiSelected, onMulti
           </div>
           <MapPin className="w-5 h-5 text-primary shrink-0" />
           <div className="flex-1 overflow-hidden">
-            <p className="font-semibold truncate">Waypoint {waypoint.id}</p>
+            <p className="font-semibold truncate">Waypoint {displayIndex}</p>
             <p className="text-xs text-muted-foreground truncate">{`Alt: ${waypoint.altitude.toFixed(2)}m, Pitch: ${waypoint.gimbalPitch}°`}</p>
           </div>
           {waypoint.cameraAction !== 'none' && <Camera className="w-4 h-4 text-accent shrink-0" />}
@@ -44,7 +51,13 @@ const WaypointItem = ({ waypoint, isSelected, onSelect, isMultiSelected, onMulti
     );
 }
 
-const SingleWaypointEditor = ({ waypoint, pois, updateWaypoint, deleteWaypoint } : { waypoint: Waypoint, pois: POI[], updateWaypoint: Function, deleteWaypoint: Function }) => {
+const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, deleteWaypoint } : { 
+    waypoint: Waypoint, 
+    displayIndex: number,
+    pois: POI[], 
+    updateWaypoint: Function, 
+    deleteWaypoint: Function 
+}) => {
     
     const handleUpdate = (field: keyof Waypoint, value: any) => {
         updateWaypoint(waypoint.id, { [field]: value });
@@ -53,7 +66,7 @@ const SingleWaypointEditor = ({ waypoint, pois, updateWaypoint, deleteWaypoint }
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Edit Waypoint {waypoint.id}</CardTitle>
+                <CardTitle>Edit Waypoint {displayIndex}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -89,7 +102,7 @@ const SingleWaypointEditor = ({ waypoint, pois, updateWaypoint, deleteWaypoint }
                 {waypoint.headingControl === 'poi_track' && (
                     <div className="space-y-2">
                         <Label>Target POI</Label>
-                        <Select value={String(waypoint.targetPoiId)} onValueChange={(val) => handleUpdate('targetPoiId', Number(val))}>
+                        <Select value={String(waypoint.targetPoiId ?? '')} onValueChange={(val) => handleUpdate('targetPoiId', val ? Number(val) : null)}>
                             <SelectTrigger><SelectValue placeholder="Select a POI" /></SelectTrigger>
                             <SelectContent>
                                 {pois.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
@@ -302,6 +315,11 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
 export function WaypointsPanel(props: PanelProps) {
   const { waypoints, selectedWaypoint, multiSelectedWaypointIds, selectAllWaypoints, clearWaypoints, selectWaypoint, toggleMultiSelectWaypoint, updateWaypoint, deleteWaypoint, pois } = props;
 
+  const selectedWaypointIndex = useMemo(() => {
+    if (!selectedWaypoint) return -1;
+    return waypoints.findIndex(wp => wp.id === selectedWaypoint.id);
+  }, [selectedWaypoint, waypoints]);
+
   const isAllSelected = waypoints.length > 0 && waypoints.length === multiSelectedWaypointIds.size;
 
   const showMultiEdit = multiSelectedWaypointIds.size > 0;
@@ -330,10 +348,11 @@ export function WaypointsPanel(props: PanelProps) {
           </div>
           <ScrollArea className="h-[200px] w-full pr-4">
             <div className="space-y-2">
-              {waypoints.map((wp: Waypoint) => (
+              {waypoints.map((wp: Waypoint, index: number) => (
                 <WaypointItem 
                     key={wp.id} 
                     waypoint={wp} 
+                    displayIndex={index + 1}
                     isSelected={selectedWaypoint?.id === wp.id}
                     isMultiSelected={multiSelectedWaypointIds.has(wp.id)}
                     onSelect={selectWaypoint}
@@ -347,7 +366,13 @@ export function WaypointsPanel(props: PanelProps) {
       </Card>
       
       {showMultiEdit && <MultiWaypointEditor {...props} />}
-      {showSingleEdit && <SingleWaypointEditor waypoint={selectedWaypoint} pois={pois} updateWaypoint={updateWaypoint} deleteWaypoint={deleteWaypoint} />}
+      {showSingleEdit && <SingleWaypointEditor 
+        waypoint={selectedWaypoint}
+        displayIndex={selectedWaypointIndex + 1}
+        pois={pois} 
+        updateWaypoint={updateWaypoint} 
+        deleteWaypoint={deleteWaypoint} 
+      />}
     </div>
   );
 }
