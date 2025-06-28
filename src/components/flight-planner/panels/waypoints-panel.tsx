@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -118,23 +118,156 @@ const SingleWaypointEditor = ({ waypoint, pois, updateWaypoint, deleteWaypoint }
     );
 };
 
-const MultiWaypointEditor = ({ waypoints, pois, multiSelectedWaypointIds, updateWaypoint, clearMultiSelection }: PanelProps) => {
-    // A simplified multi-editor
-    const handleBatchUpdate = (field: keyof Waypoint, value: any) => {
-        multiSelectedWaypointIds.forEach((id: number) => {
-            updateWaypoint(id, { [field]: value });
-        });
+const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, clearMultiSelection }: PanelProps) => {
+    const [updates, setUpdates] = useState<Partial<Waypoint>>({
+        altitude: 50,
+        gimbalPitch: 0,
+        hoverTime: 0,
+        fixedHeading: 0,
+    });
+    const [apply, setApply] = useState({
+        altitude: false,
+        gimbalPitch: false,
+        hoverTime: false,
+        headingControl: false,
+        cameraAction: false,
+    });
+
+    const handleApplyChange = (field: keyof typeof apply, value: boolean) => {
+        setApply(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleValueChange = (field: keyof Waypoint, value: any) => {
+        setUpdates(prev => ({ ...prev, [field]: value }));
     };
     
+    const handleHeadingControlChange = (value: HeadingControl | '') => {
+        const newUpdates: Partial<Waypoint> = { ...updates, headingControl: value as HeadingControl };
+        if (value !== 'fixed') {
+            delete newUpdates.fixedHeading;
+        }
+        if (value !== 'poi_track') {
+            delete newUpdates.targetPoiId;
+        }
+        setUpdates(newUpdates);
+    };
+
+    const handleBatchUpdate = () => {
+        const finalUpdates: Partial<Waypoint> = {};
+        
+        if (apply.altitude && updates.altitude !== undefined) {
+            finalUpdates.altitude = updates.altitude;
+        }
+        if (apply.gimbalPitch && updates.gimbalPitch !== undefined) {
+            finalUpdates.gimbalPitch = updates.gimbalPitch;
+        }
+        if (apply.hoverTime && updates.hoverTime !== undefined) {
+            finalUpdates.hoverTime = updates.hoverTime;
+        }
+        if (apply.cameraAction && updates.cameraAction) {
+            finalUpdates.cameraAction = updates.cameraAction;
+        }
+        if (apply.headingControl && updates.headingControl) {
+            finalUpdates.headingControl = updates.headingControl;
+            if (updates.headingControl === 'fixed') {
+                finalUpdates.fixedHeading = updates.fixedHeading ?? 0;
+            }
+            if (updates.headingControl === 'poi_track') {
+                finalUpdates.targetPoiId = updates.targetPoiId ?? null;
+            } else {
+                finalUpdates.targetPoiId = null;
+            }
+        }
+
+        if (Object.keys(finalUpdates).length > 0) {
+            multiSelectedWaypointIds.forEach((id: number) => {
+                updateWaypoint(id, finalUpdates);
+            });
+        }
+    };
+
     return (
          <Card>
           <CardHeader>
             <CardTitle>Batch Edit {multiSelectedWaypointIds.size} Waypoints</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-             <div className="space-y-2">
-                <Label>Camera Action</Label>
-                <Select onValueChange={(val: CameraAction) => handleBatchUpdate('cameraAction', val)}>
+            
+            <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                    <Checkbox id="applyAltitude" checked={apply.altitude} onCheckedChange={(checked) => handleApplyChange('altitude', !!checked)} />
+                    <Label htmlFor="applyAltitude" className="flex justify-between w-full cursor-pointer">
+                        <span>Altitude</span>
+                        <span>{updates.altitude ?? 50} m</span>
+                    </Label>
+                </div>
+                <Slider disabled={!apply.altitude} value={[updates.altitude ?? 50]} onValueChange={([val]) => handleValueChange('altitude', val)} max={120} step={1} />
+            </div>
+            
+            <div className="space-y-2">
+                 <div className="flex items-center space-x-2">
+                    <Checkbox id="applyGimbal" checked={apply.gimbalPitch} onCheckedChange={(checked) => handleApplyChange('gimbalPitch', !!checked)} />
+                    <Label htmlFor="applyGimbal" className="flex justify-between w-full cursor-pointer">
+                        <span>Gimbal Pitch</span>
+                        <span>{updates.gimbalPitch ?? 0}°</span>
+                    </Label>
+                </div>
+                <Slider disabled={!apply.gimbalPitch} value={[updates.gimbalPitch ?? 0]} onValueChange={([val]) => handleValueChange('gimbalPitch', val)} min={-90} max={30} step={1} />
+            </div>
+
+            <div className="space-y-2">
+                 <div className="flex items-center space-x-2">
+                    <Checkbox id="applyHover" checked={apply.hoverTime} onCheckedChange={(checked) => handleApplyChange('hoverTime', !!checked)} />
+                    <Label htmlFor="applyHover" className="flex justify-between w-full cursor-pointer">
+                        <span>Hover Time</span>
+                        <span>{updates.hoverTime ?? 0} s</span>
+                    </Label>
+                </div>
+                <Slider disabled={!apply.hoverTime} value={[updates.hoverTime ?? 0]} onValueChange={([val]) => handleValueChange('hoverTime', val)} max={30} step={1} />
+            </div>
+
+            <Separator />
+            
+            <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                    <Checkbox id="applyHeading" checked={apply.headingControl} onCheckedChange={(checked) => handleApplyChange('headingControl', !!checked)} />
+                    <Label htmlFor="applyHeading" className="cursor-pointer">Heading</Label>
+                </div>
+                <Select disabled={!apply.headingControl} value={updates.headingControl || ''} onValueChange={(val: HeadingControl | '') => handleHeadingControlChange(val)}>
+                    <SelectTrigger><SelectValue placeholder="Select Heading" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="auto">Auto (Next Waypoint)</SelectItem>
+                        <SelectItem value="fixed">Fixed Angle</SelectItem>
+                        <SelectItem value="poi_track">Focus on POI</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+            {apply.headingControl && updates.headingControl === 'fixed' && (
+                 <div className="space-y-2 pl-6">
+                    <Label className="flex justify-between">Fixed Heading <span>{updates.fixedHeading ?? 0}°</span></Label>
+                    <Slider value={[updates.fixedHeading ?? 0]} onValueChange={([val]) => handleValueChange('fixedHeading', val)} max={359} step={1} />
+                </div>
+            )}
+            {apply.headingControl && updates.headingControl === 'poi_track' && (
+                <div className="space-y-2 pl-6">
+                    <Label>Target POI</Label>
+                    <Select value={String(updates.targetPoiId || '')} onValueChange={(val) => handleValueChange('targetPoiId', val ? Number(val) : null)}>
+                        <SelectTrigger><SelectValue placeholder="Select a POI" /></SelectTrigger>
+                        <SelectContent>
+                            {pois.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                </div>
+            )}
+
+            <Separator />
+
+            <div className="space-y-2">
+                 <div className="flex items-center space-x-2">
+                    <Checkbox id="applyAction" checked={apply.cameraAction} onCheckedChange={(checked) => handleApplyChange('cameraAction', !!checked)} />
+                    <Label htmlFor="applyAction" className="cursor-pointer">Camera Action</Label>
+                </div>
+                <Select disabled={!apply.cameraAction} value={updates.cameraAction || ''} onValueChange={(val: CameraAction | '') => handleValueChange('cameraAction', val as CameraAction)}>
                   <SelectTrigger><SelectValue placeholder="Select an action" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
@@ -144,10 +277,21 @@ const MultiWaypointEditor = ({ waypoints, pois, multiSelectedWaypointIds, update
                   </SelectContent>
                 </Select>
              </div>
-             <Button className="w-full bg-accent hover:bg-accent/90" onClick={clearMultiSelection}>Done</Button>
+
+             <Separator />
+
+            <div className="flex gap-2">
+                <Button className="flex-1" onClick={handleBatchUpdate}>
+                    Apply to Selected
+                </Button>
+                <Button variant="secondary" onClick={clearMultiSelection}>
+                    Clear Selection
+                </Button>
+            </div>
+
           </CardContent>
         </Card>
-    )
+    );
 }
 
 export function WaypointsPanel(props: PanelProps) {
@@ -155,7 +299,7 @@ export function WaypointsPanel(props: PanelProps) {
 
   const isAllSelected = waypoints.length > 0 && waypoints.length === multiSelectedWaypointIds.size;
 
-  const showMultiEdit = multiSelectedWaypointIds.size > 1;
+  const showMultiEdit = multiSelectedWaypointIds.size > 0;
   const showSingleEdit = !showMultiEdit && selectedWaypoint !== null;
 
   return (
