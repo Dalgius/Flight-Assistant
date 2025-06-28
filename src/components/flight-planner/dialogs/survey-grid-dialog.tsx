@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Grid3x3, DraftingCompass } from 'lucide-react';
 import type { SurveyGridParams } from '../types';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface SurveyGridDialogProps {
   open: boolean;
@@ -36,6 +37,7 @@ export function SurveyGridDialog({
   onCreateGrid,
   isEditing,
 }: SurveyGridDialogProps) {
+  const { t } = useTranslation();
   
   const handleNumberValueChange = (field: keyof Omit<SurveyGridParams, 'polygon'>, value: string) => {
     onParamsChange({ ...params, [field]: Number(value) });
@@ -47,17 +49,17 @@ export function SurveyGridDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Survey Grid' : 'Create Survey Grid'}</DialogTitle>
+          <DialogTitle>{isEditing ? t('editSurveyTitle') : t('createSurveyTitle')}</DialogTitle>
           <DialogDescription>
             {isAreaDefined
-              ? `Area defined with ${params.polygon.length} points. Adjust parameters and generate the grid.`
-              : 'Set parameters, then start drawing the area on the map.'}
+              ? t('surveyAreaDefinedDesc', { points: params.polygon.length })
+              : t('surveyAreaNotDefinedDesc')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="surveyAltitude">Flight Altitude (m)</Label>
+              <Label htmlFor="surveyAltitude">{t('surveyAltitude')}</Label>
               <Input
                 id="surveyAltitude"
                 type="number"
@@ -66,7 +68,7 @@ export function SurveyGridDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="gridAngle">Grid Angle (°)</Label>
+              <Label htmlFor="gridAngle">{t('gridAngle')}</Label>
               <Input
                 id="gridAngle"
                 type="number"
@@ -75,13 +77,13 @@ export function SurveyGridDialog({
               />
               <Button variant="outline" size="sm" className="w-full mt-1" onClick={onDrawAngle}>
                 <DraftingCompass className="w-4 h-4 mr-2" />
-                Draw Angle
+                {t('drawAngle')}
               </Button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="sidelap">Sidelap (%)</Label>
+              <Label htmlFor="sidelap">{t('sidelap')}</Label>
               <Input
                 id="sidelap"
                 type="number"
@@ -90,7 +92,7 @@ export function SurveyGridDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="frontlap">Frontlap (%)</Label>
+              <Label htmlFor="frontlap">{t('frontlap')}</Label>
               <Input
                 id="frontlap"
                 type="number"
@@ -102,14 +104,14 @@ export function SurveyGridDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('cancel')}
           </Button>
           <Button onClick={onDrawArea}>
-            {isAreaDefined ? 'Redraw Area' : 'Start Drawing Area'}
+            {isAreaDefined ? t('redrawArea') : t('startDrawingArea')}
           </Button>
           <Button disabled={!isAreaDefined} onClick={onCreateGrid}>
             <Grid3x3 className="w-4 h-4 mr-2" />
-            {isEditing ? 'Update Grid' : 'Generate Grid'}
+            {isEditing ? t('updateGrid') : t('generateGrid')}
           </Button>
         </DialogFooter>
       </DialogContent>
