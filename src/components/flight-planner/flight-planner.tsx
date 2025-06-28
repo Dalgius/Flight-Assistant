@@ -4,8 +4,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
-import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams } from '@/components/flight-planner/types';
-import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing } from '@/lib/flight-plan-calcs';
+import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData } from '@/components/flight-planner/types';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints } from '@/lib/flight-plan-calcs';
 
 import { ActionBar } from '@/components/flight-planner/action-bar';
 import { SidePanel } from '@/components/flight-planner/side-panel';
@@ -34,14 +34,18 @@ export default function FlightPlanner() {
   const [waypointCounter, setWaypointCounter] = useState(1);
   const [poiCounter, setPoiCounter] = useState(1);
 
+  // Lifted state for dialogs
   const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
   const [surveyParams, setSurveyParams] = useState<SurveyGridParams>({
-    altitude: 50,
-    sidelap: 70,
-    frontlap: 80,
-    angle: 0,
-    polygon: [],
+    altitude: 50, sidelap: 70, frontlap: 80, angle: 0, polygon: [],
   });
+  const [facadeParams, setFacadeParams] = useState<FacadeScanParams>({
+    side: 'left', distance: 10, minHeight: 5, maxHeight: 20,
+    horizontalOverlap: 80, verticalOverlap: 70, gimbalPitch: 0
+  });
+
+  const [facadeLine, setFacadeLine] = useState<{start: LatLng, end: LatLng} | null>(null);
+  
   const [drawingState, setDrawingState] = useState<DrawingState>({ mode: null, onComplete: () => {} });
   
   const MapView = useMemo(() => dynamic(() => import('@/components/flight-planner/map-view').then(mod => mod.MapView), { 
@@ -55,10 +59,9 @@ export default function FlightPlanner() {
 
   const handleOpenDialog = (dialog: DialogType) => {
     if (dialog === 'orbit' && pois.length > 0) {
-        // Pre-fill with the first POI if none is selected or the selected one is invalid
-        const validPoiSelected = pois.some(p => p.id === parseInt(orbitParams.poiId));
+        const validPoiSelected = pois.some(p => String(p.id) === orbitParams.poiId);
         if (!validPoiSelected) {
-            setOrbitParams({ poiId: String(pois[0].id), radius: 30, numPoints: 8 });
+            setOrbitParams(prev => ({ ...prev, poiId: String(pois[0].id) }));
         }
     }
     setActiveDialog(dialog);
@@ -251,7 +254,7 @@ export default function FlightPlanner() {
     }
 
     let currentWpCounter = waypointCounter;
-    const newWaypoints: Waypoint[] = waypointsData.map(wpData => {
+    const newWaypoints: Waypoint[] = waypointsData.map((wpData: GeneratedWaypointData) => {
         const newWp: Waypoint = {
             id: currentWpCounter++,
             latlng: wpData.latlng,
@@ -269,6 +272,39 @@ export default function FlightPlanner() {
     toast({ title: "Survey Grid Created", description: `${waypointsData.length} waypoints generated.` });
 
 }, [surveyParams, toast, waypointCounter]);
+
+const handleGenerateFacadeScan = useCallback(() => {
+    if (!facadeLine) {
+        toast({ variant: "destructive", title: "Error", description: "Facade line is not defined." });
+        return;
+    }
+
+    const waypointsData = generateFacadeWaypoints(facadeLine.start, facadeLine.end, facadeParams);
+    
+    if (waypointsData.length === 0) {
+        toast({ variant: "destructive", title: "No Waypoints", description: "Could not generate any waypoints for the given area and parameters." });
+        return;
+    }
+    
+    let currentWpCounter = waypointCounter;
+    const newWaypoints: Waypoint[] = waypointsData.map((wpData: GeneratedWaypointData) => {
+        const newWp: Waypoint = {
+            id: currentWpCounter++,
+            latlng: wpData.latlng,
+            ...wpData.options,
+            hoverTime: 0,
+            targetPoiId: null,
+            terrainElevationMSL: null,
+        };
+        return newWp;
+    });
+
+    setWaypoints(prev => [...prev, ...newWaypoints]);
+    setWaypointCounter(currentWpCounter);
+    setActiveDialog(null);
+    setFacadeLine(null); // Reset after generation
+    toast({ title: "Facade Scan Created", description: `${waypointsData.length} waypoints generated.` });
+}, [facadeLine, facadeParams, waypointCounter, toast]);
 
   const handleDrawRadiusRequest = useCallback(() => {
     const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
@@ -332,6 +368,27 @@ export default function FlightPlanner() {
       description: "Click and drag on the map to define the angle of the flight lines.",
     });
   }, [toast]);
+
+  const handleDrawFacadeLineRequest = useCallback(() => {
+    setActiveDialog(null);
+    setDrawingState({
+        mode: 'facadeLine',
+        onComplete: (line: {start: LatLng, end: LatLng}) => {
+            setFacadeLine(line);
+            setDrawingState({ mode: null, onComplete: () => {} });
+            setActiveDialog('facade');
+            toast({
+                title: "Facade Line Drawn",
+                description: "You can now adjust parameters and generate the scan.",
+            });
+        },
+    });
+    toast({
+        title: "Drawing Facade Line",
+        description: "Click and drag on the map along the building facade.",
+    });
+  }, [toast]);
+
 
   const flightStats: FlightStatistics = useMemo(() => {
     let totalDistance = 0;
@@ -422,7 +479,17 @@ export default function FlightPlanner() {
       />
       <FacadeScanDialog
         open={activeDialog === 'facade'}
-        onOpenChange={(isOpen) => !isOpen && setActiveDialog(null)}
+        onOpenChange={(isOpen) => {
+            if (!isOpen) {
+                setActiveDialog(null);
+                setFacadeLine(null);
+            }
+        }}
+        params={facadeParams}
+        onParamsChange={setFacadeParams}
+        onDrawLine={handleDrawFacadeLineRequest}
+        onGenerateScan={handleGenerateFacadeScan}
+        isLineDrawn={!!facadeLine}
       />
     </div>
   );
