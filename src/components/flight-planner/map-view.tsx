@@ -1,3 +1,4 @@
+
 "use client";
 
 import 'leaflet/dist/leaflet.css';
@@ -9,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Waypoint, POI, LatLng } from './types';
+import type { Waypoint, POI, LatLng, DrawingState } from './types';
 import { calculateBearing } from '@/lib/flight-plan-calcs';
 
 // Fix for default Leaflet icon path issue with bundlers
@@ -22,14 +23,57 @@ L.Icon.Default.mergeOptions({
 
 
 // Custom hook to handle map events
-const MapEvents = ({ onMapClick }: { onMapClick: (latlng: LatLng, event: any) => void; }) => {
+const MapEvents = ({ onMapClick, drawingState }: { onMapClick: (latlng: LatLng, event: any) => void; drawingState: DrawingState }) => {
     useMapEvents({
         click(e) {
-            onMapClick(e.latlng, e);
+            if (drawingState.mode === null) {
+                onMapClick(e.latlng, e);
+            }
         },
     });
     return null;
 };
+
+const MapDrawer = ({ drawingState }: { drawingState: DrawingState }) => {
+    const map = useMap();
+    const [linePoints, setLinePoints] = useState<LatLng[] | null>(null);
+
+    useMapEvents({
+        mousedown(e) {
+            if (drawingState.mode === 'orbitRadius' && drawingState.center) {
+                map.dragging.disable();
+                setLinePoints([drawingState.center, e.latlng]);
+            }
+        },
+        mousemove(e) {
+            if (linePoints) {
+                setLinePoints([linePoints[0], e.latlng]);
+            }
+        },
+        mouseup(e) {
+            if (linePoints) {
+                const radius = L.latLng(linePoints[0]).distanceTo(e.latlng);
+                drawingState.onComplete(radius);
+                setLinePoints(null);
+                map.dragging.enable();
+            }
+        }
+    });
+
+    useEffect(() => {
+        if (drawingState.mode === 'orbitRadius') {
+            map.getContainer().style.cursor = 'crosshair';
+        } else {
+            map.getContainer().style.cursor = '';
+            setLinePoints(null); // Clear line if mode changes
+        }
+        return () => { // Cleanup cursor on unmount
+          map.getContainer().style.cursor = '';
+        }
+    }, [drawingState.mode, map]);
+
+    return linePoints ? <Polyline positions={linePoints} color="#f39c12" weight={3} dashArray="5, 5" /> : null;
+}
 
 const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
@@ -229,6 +273,7 @@ interface MapViewProps {
   pathType: 'straight' | 'curved';
   selectedWaypointId: number | null;
   multiSelectedWaypointIds: Set<number>;
+  drawingState: DrawingState;
   onMapClick: (latlng: LatLng, event: any) => void;
   onMarkerClick: (id: number) => void;
   onMarkerDragEnd: (id: number, updates: Partial<Waypoint>) => void;
@@ -249,7 +294,7 @@ const defaultLayer = {
 };
 
 export function MapView(props: MapViewProps) {
-  const { isPanelOpen, waypoints, pois, pathType, selectedWaypointId, multiSelectedWaypointIds, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
+  const { isPanelOpen, waypoints, pois, pathType, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
   const [isSatelliteView, setIsSatelliteView] = useState(false);
   const mapRef = useRef<L.Map>(null);
 
@@ -270,13 +315,15 @@ export function MapView(props: MapViewProps) {
                 key={isSatelliteView ? 'satellite' : 'default'}
               />
               <ScaleControl position="bottomleft" />
-              <MapEvents onMapClick={onMapClick} />
+              <MapEvents onMapClick={onMapClick} drawingState={drawingState} />
               <MapController 
                 waypoints={waypoints} 
                 pois={pois}
                 isPanelOpen={isPanelOpen} 
                 selectedWaypointId={selectedWaypointId}
               />
+              <MapDrawer drawingState={drawingState} />
+
 
               {pathCoords.length > 1 && <Polyline positions={pathCoords} color="#3498db" weight={3} dashArray={pathType === 'straight' ? '5, 5' : undefined} />}
 
