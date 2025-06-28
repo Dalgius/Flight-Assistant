@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileDown, FileUp, Globe, FileJson2 } from 'lucide-react';
 import type { PanelProps } from '../types';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface FilePanelProps extends PanelProps {
   onImportJson: () => void;
@@ -14,38 +15,40 @@ interface FilePanelProps extends PanelProps {
 }
 
 export function FilePanel({ onImportJson, onExportJson, onExportKmz, onExportKml }: FilePanelProps) {
+  const { t } = useTranslation();
+  
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Mission Data</CardTitle>
-          <CardDescription>Save your current flight plan or load an existing one.</CardDescription>
+          <CardTitle>{t('missionDataTitle')}</CardTitle>
+          <CardDescription>{t('missionDataDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <Button variant="outline" onClick={onImportJson}>
             <FileUp className="w-4 h-4 mr-2" />
-            Import from JSON
+            {t('importJsonBtn')}
           </Button>
           <Button variant="outline" onClick={onExportJson}>
             <FileDown className="w-4 h-4 mr-2" />
-            Export to JSON
+            {t('exportJsonBtn')}
           </Button>
         </CardContent>
       </Card>
       
       <Card>
         <CardHeader>
-          <CardTitle>Third-Party Export</CardTitle>
-          <CardDescription>Export your flight plan for use in other software.</CardDescription>
+          <CardTitle>{t('thirdPartyExportTitle')}</CardTitle>
+          <CardDescription>{t('thirdPartyExportDesc')}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <Button variant="outline" onClick={onExportKmz}>
             <FileJson2 className="w-4 h-4 mr-2" />
-            Export DJI WPML (.kmz)
+            {t('exportKmzBtn')}
           </Button>
           <Button variant="outline" onClick={onExportKml}>
             <Globe className="w-4 h-4 mr-2" />
-            Export for Google Earth (.kml)
+            {t('exportKmlBtn')}
           </Button>
         </CardContent>
       </Card>
