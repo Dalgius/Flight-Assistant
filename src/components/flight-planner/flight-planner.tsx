@@ -105,6 +105,19 @@ export default function FlightPlanner() {
     });
   }, [selectedWaypointId]);
 
+  const deleteMultiSelectedWaypoints = useCallback(() => {
+    if (multiSelectedWaypointIds.size === 0) return;
+    const count = multiSelectedWaypointIds.size;
+    
+    setWaypoints(prev => prev.filter(wp => !multiSelectedWaypointIds.has(wp.id)));
+    setMultiSelectedWaypointIds(new Set());
+    
+    toast({
+      title: "Waypoints Deleted",
+      description: `${count} waypoint${count > 1 ? 's have' : ' has'} been removed.`
+    });
+  }, [multiSelectedWaypointIds, toast]);
+
   const selectWaypoint = useCallback((id: number | null) => {
     if (multiSelectedWaypointIds.size > 0) {
       setMultiSelectedWaypointIds(new Set());
@@ -360,7 +373,7 @@ export default function FlightPlanner() {
     waypoints, selectedWaypoint, multiSelectedWaypointIds,
     addWaypoint, updateWaypoint, deleteWaypoint, selectWaypoint,
     toggleMultiSelectWaypoint, clearMultiSelection, selectAllWaypoints,
-    clearWaypoints,
+    clearWaypoints, deleteMultiSelectedWaypoints,
     pois, addPoi, deletePoi,
     flightStats,
     onOpenDialog: handleOpenDialog
