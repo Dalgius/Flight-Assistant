@@ -9,6 +9,8 @@ import type { PanelProps, SurveyMission } from '../types';
 
 
 export function MissionsPanel({ onOpenDialog, missions = [], deleteMission, editMission }: PanelProps) {
+  const filteredMissions = missions.filter(m => m.type !== 'Orbit');
+  
   return (
     <div className="space-y-6">
       <Card>
@@ -34,14 +36,13 @@ export function MissionsPanel({ onOpenDialog, missions = [], deleteMission, edit
         <CardContent>
           <ScrollArea className="h-[150px] w-full">
             <div className="space-y-2">
-              {missions.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">No missions created yet.</p>
+              {filteredMissions.length === 0 && (
+                <p className="text-center text-muted-foreground py-8">No grid or facade missions created.</p>
               )}
-              {missions.map((mission: SurveyMission) => (
+              {filteredMissions.map((mission: SurveyMission) => (
                 <div key={mission.id} className="p-3 rounded-lg border flex items-center gap-3">
                   {mission.type === 'Grid' && <Grid3x3 className="w-5 h-5 text-primary" />}
                   {mission.type === 'Facade' && <Building2 className="w-5 h-5 text-accent" />}
-                  {mission.type === 'Orbit' && <AppWindow className="w-5 h-5 text-green-500" />}
                   <div className="flex-1">
                     <p className="font-semibold">{mission.name}</p>
                     <p className="text-xs text-muted-foreground">{mission.type} Mission ({mission.waypointIds.length} WPs)</p>
