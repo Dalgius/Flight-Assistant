@@ -22,58 +22,100 @@ L.Icon.Default.mergeOptions({
 });
 
 
-// Custom hook to handle map events
-const MapEvents = ({ onMapClick, drawingState }: { onMapClick: (latlng: LatLng, event: any) => void; drawingState: DrawingState }) => {
-    useMapEvents({
-        click(e) {
-            if (drawingState.mode === null) {
-                onMapClick(e.latlng, e);
-            }
-        },
-    });
-    return null;
-};
-
-const MapDrawer = ({ drawingState }: { drawingState: DrawingState }) => {
+const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: DrawingState; onMapClick: (latlng: LatLng, event: any) => void; }) => {
     const map = useMap();
-    const [linePoints, setLinePoints] = useState<LatLng[] | null>(null);
 
-    useMapEvents({
-        mousedown(e) {
-            if (drawingState.mode === 'orbitRadius' && drawingState.center) {
-                map.dragging.disable();
-                setLinePoints([drawingState.center, e.latlng]);
-            }
-        },
-        mousemove(e) {
-            if (linePoints) {
-                setLinePoints([linePoints[0], e.latlng]);
-            }
-        },
-        mouseup(e) {
-            if (linePoints) {
-                const radius = L.latLng(linePoints[0]).distanceTo(e.latlng);
-                drawingState.onComplete(radius);
-                setLinePoints(null);
-                map.dragging.enable();
-            }
-        }
-    });
+    // Orbit radius drawing state
+    const [radiusLinePoints, setRadiusLinePoints] = useState<LatLng[] | null>(null);
+    // Survey area drawing state
+    const [surveyPolygonPoints, setSurveyPolygonPoints] = useState<LatLng[]>([]);
+    // Survey angle drawing state
+    const [angleLinePoints, setAngleLinePoints] = useState<LatLng[] | null>(null);
 
     useEffect(() => {
-        if (drawingState.mode === 'orbitRadius') {
+        // Reset all drawing states when mode changes
+        setRadiusLinePoints(null);
+        setSurveyPolygonPoints([]);
+        setAngleLinePoints(null);
+
+        if (drawingState.mode) {
             map.getContainer().style.cursor = 'crosshair';
         } else {
             map.getContainer().style.cursor = '';
-            setLinePoints(null); // Clear line if mode changes
         }
-        return () => { // Cleanup cursor on unmount
-          map.getContainer().style.cursor = '';
-        }
+
+        return () => { map.getContainer().style.cursor = ''; }
     }, [drawingState.mode, map]);
 
-    return linePoints ? <Polyline positions={linePoints} color="#f39c12" weight={3} dashArray="5, 5" /> : null;
-}
+    useMapEvents({
+        click(e) {
+            if (drawingState.mode === 'surveyArea') {
+                const newPoints = [...surveyPolygonPoints, e.latlng];
+                 // Check if user clicked on the first point to close polygon (min 3 points)
+                const clickTolerance = map.getZoom() > 15 ? 20 / (map.getZoom() - 14) : 20; // smaller tolerance on zoom out
+                if (surveyPolygonPoints.length >= 3 && L.latLng(e.latlng).distanceTo(L.latLng(surveyPolygonPoints[0])) < clickTolerance ) {
+                    drawingState.onComplete(surveyPolygonPoints); 
+                    setSurveyPolygonPoints([]);
+                    return;
+                }
+                setSurveyPolygonPoints(newPoints);
+            } else if (drawingState.mode === null) {
+                onMapClick(e.latlng, e);
+            }
+        },
+        mousedown(e) {
+            if (drawingState.mode === 'orbitRadius' && drawingState.center) {
+                map.dragging.disable();
+                setRadiusLinePoints([drawingState.center, e.latlng]);
+            } else if (drawingState.mode === 'surveyAngle') {
+                map.dragging.disable();
+                setAngleLinePoints([e.latlng, e.latlng]);
+            }
+        },
+        mousemove(e) {
+            if (radiusLinePoints) {
+                setRadiusLinePoints([radiusLinePoints[0], e.latlng]);
+            } else if (angleLinePoints) {
+                setAngleLinePoints([angleLinePoints[0], e.latlng]);
+            }
+        },
+        mouseup(e) {
+            map.dragging.enable();
+            if (radiusLinePoints) {
+                const radius = L.latLng(radiusLinePoints[0]).distanceTo(e.latlng);
+                drawingState.onComplete(radius);
+                setRadiusLinePoints(null);
+            } else if (angleLinePoints) {
+                const angle = calculateBearing(angleLinePoints[0], e.latlng);
+                drawingState.onComplete(angle);
+                setAngleLinePoints(null);
+            }
+        }
+    });
+
+    const vertexMarkers = surveyPolygonPoints.map((p, i) => (
+         <Marker key={`v-${i}`} position={p} icon={L.divIcon({
+            className: 'survey-vertex-marker',
+            html: `<div style="background: ${i === 0 ? '#2ecc71' : '#e74c3c'}; border: 1px solid white; border-radius: 50%; width: 10px; height: 10px;"></div>`,
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+        })} />
+    ));
+
+    const polygonPreview = surveyPolygonPoints.length > 1 
+      ? <Polyline positions={surveyPolygonPoints.length > 2 ? [...surveyPolygonPoints, surveyPolygonPoints[0]] : surveyPolygonPoints} color="#1abc9c" weight={2} dashArray="5, 5" />
+      : null;
+
+
+    return (
+        <>
+            {radiusLinePoints && <Polyline positions={radiusLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
+            {angleLinePoints && <Polyline positions={angleLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
+            {polygonPreview}
+            {vertexMarkers}
+        </>
+    );
+};
 
 const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
@@ -280,7 +322,7 @@ interface MapViewProps {
 }
 
 const satelliteLayer = {
-  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}.png',
   attribution: 'Tiles &copy; Esri',
   maxZoom: 25,
   maxNativeZoom: 21,
@@ -322,14 +364,13 @@ export function MapView(props: MapViewProps) {
                 key={isSatelliteView ? 'satellite' : 'default'}
               />
               <ScaleControl position="bottomleft" />
-              <MapEvents onMapClick={onMapClick} drawingState={drawingState} />
               <MapController 
                 waypoints={waypoints} 
                 pois={pois}
                 isPanelOpen={isPanelOpen} 
                 selectedWaypointId={selectedWaypointId}
               />
-              <MapDrawer drawingState={drawingState} />
+              <MapInteractionManager onMapClick={onMapClick} drawingState={drawingState} />
 
 
               {pathCoords.length > 1 && <Polyline positions={pathCoords} color="#3498db" weight={3} dashArray={pathType === 'straight' ? '5, 5' : undefined} />}
