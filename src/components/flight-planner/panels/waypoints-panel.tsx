@@ -83,7 +83,7 @@ const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, de
     return (
         <Card>
             <CardHeader>
-                <CardTitle>{t('editWaypointTitle')} {displayIndex}</CardTitle>
+                <CardTitle>{t('waypointSettingsTitle')} {displayIndex}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="space-y-2">
