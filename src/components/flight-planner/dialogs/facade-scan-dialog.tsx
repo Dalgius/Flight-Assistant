@@ -25,6 +25,7 @@ interface FacadeScanDialogProps {
   onDrawLine: () => void;
   onGenerateScan: () => void;
   isLineDrawn: boolean;
+  isEditing: boolean;
 }
 
 export function FacadeScanDialog({ 
@@ -34,7 +35,8 @@ export function FacadeScanDialog({
     onParamsChange, 
     onDrawLine, 
     onGenerateScan, 
-    isLineDrawn 
+    isLineDrawn,
+    isEditing
 }: FacadeScanDialogProps) {
 
     const handleValueChange = (field: keyof FacadeScanParams, value: string | number) => {
@@ -49,7 +51,7 @@ export function FacadeScanDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
             <DialogHeader>
-            <DialogTitle>Create Facade Scan</DialogTitle>
+            <DialogTitle>{isEditing ? 'Edit Facade Scan' : 'Create Facade Scan'}</DialogTitle>
             <DialogDescription>
                 {isLineDrawn ? "Line drawn. Adjust parameters and generate." : "Draw a line on the map to generate a vertical scanning mission."}
             </DialogDescription>
@@ -116,7 +118,7 @@ export function FacadeScanDialog({
             </Button>
             <Button disabled={!isLineDrawn} onClick={onGenerateScan}>
                 <Building2 className="w-4 h-4 mr-2" />
-                Generate Scan
+                {isEditing ? 'Update Scan' : 'Generate Scan'}
             </Button>
             </DialogFooter>
         </DialogContent>
