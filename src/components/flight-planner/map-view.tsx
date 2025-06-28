@@ -25,18 +25,18 @@ L.Icon.Default.mergeOptions({
 const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: DrawingState; onMapClick: (latlng: LatLng, event: any) => void; }) => {
     const map = useMap();
 
-    // Orbit radius drawing state
+    // Drawing states
     const [radiusLinePoints, setRadiusLinePoints] = useState<LatLng[] | null>(null);
-    // Survey area drawing state
     const [surveyPolygonPoints, setSurveyPolygonPoints] = useState<LatLng[]>([]);
-    // Survey angle drawing state
     const [angleLinePoints, setAngleLinePoints] = useState<LatLng[] | null>(null);
+    const [facadeLinePoints, setFacadeLinePoints] = useState<LatLng[] | null>(null);
 
     useEffect(() => {
         // Reset all drawing states when mode changes
         setRadiusLinePoints(null);
         setSurveyPolygonPoints([]);
         setAngleLinePoints(null);
+        setFacadeLinePoints(null);
 
         if (drawingState.mode) {
             map.getContainer().style.cursor = 'crosshair';
@@ -52,7 +52,7 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
             if (drawingState.mode === 'surveyArea') {
                 const newPoints = [...surveyPolygonPoints, e.latlng];
                  // Check if user clicked on the first point to close polygon (min 3 points)
-                const clickTolerance = map.getZoom() > 15 ? 20 / (map.getZoom() - 14) : 20; // smaller tolerance on zoom out
+                const clickTolerance = map.getZoom() > 15 ? 20 / (map.getZoom() - 14) : 20;
                 if (surveyPolygonPoints.length >= 3 && L.latLng(e.latlng).distanceTo(L.latLng(surveyPolygonPoints[0])) < clickTolerance ) {
                     drawingState.onComplete(surveyPolygonPoints); 
                     setSurveyPolygonPoints([]);
@@ -70,6 +70,9 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
             } else if (drawingState.mode === 'surveyAngle') {
                 map.dragging.disable();
                 setAngleLinePoints([e.latlng, e.latlng]);
+            } else if (drawingState.mode === 'facadeLine') {
+                map.dragging.disable();
+                setFacadeLinePoints([e.latlng, e.latlng]);
             }
         },
         mousemove(e) {
@@ -77,18 +80,25 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
                 setRadiusLinePoints([radiusLinePoints[0], e.latlng]);
             } else if (angleLinePoints) {
                 setAngleLinePoints([angleLinePoints[0], e.latlng]);
+            } else if (facadeLinePoints) {
+                setFacadeLinePoints([facadeLinePoints[0], e.latlng]);
             }
         },
         mouseup(e) {
-            map.dragging.enable();
             if (radiusLinePoints) {
+                map.dragging.enable();
                 const radius = L.latLng(radiusLinePoints[0]).distanceTo(e.latlng);
                 drawingState.onComplete(radius);
                 setRadiusLinePoints(null);
             } else if (angleLinePoints) {
+                map.dragging.enable();
                 const angle = calculateBearing(angleLinePoints[0], e.latlng);
                 drawingState.onComplete(angle);
                 setAngleLinePoints(null);
+            } else if (facadeLinePoints) {
+                map.dragging.enable();
+                drawingState.onComplete({ start: facadeLinePoints[0], end: e.latlng });
+                setFacadeLinePoints(null);
             }
         }
     });
@@ -106,11 +116,11 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
       ? <Polyline positions={surveyPolygonPoints.length > 2 ? [...surveyPolygonPoints, surveyPolygonPoints[0]] : surveyPolygonPoints} color="#1abc9c" weight={2} dashArray="5, 5" />
       : null;
 
-
     return (
         <>
             {radiusLinePoints && <Polyline positions={radiusLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
             {angleLinePoints && <Polyline positions={angleLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
+            {facadeLinePoints && <Polyline positions={facadeLinePoints} color="#1abc9c" weight={3} dashArray="10, 10" />}
             {polygonPreview}
             {vertexMarkers}
         </>
@@ -322,7 +332,7 @@ interface MapViewProps {
 }
 
 const satelliteLayer = {
-  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}.png',
+  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   attribution: 'Tiles &copy; Esri',
   maxZoom: 25,
   maxNativeZoom: 21,
