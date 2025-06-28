@@ -1,4 +1,5 @@
 
+
 export type PanelType = 'settings' | 'waypoints' | 'pois' | 'missions' | 'terrain' | 'file' | 'stats';
 
 export type DialogType = 'orbit' | 'survey' | 'facade' | null;
@@ -103,4 +104,11 @@ export interface GeneratedWaypointData {
         gimbalPitch: number;
         waypointType: WaypointType;
     }
+}
+
+export interface FlightPlan {
+  waypoints: Waypoint[];
+  pois: POI[];
+  missions: SurveyMission[];
+  settings: FlightPlanSettings;
 }
