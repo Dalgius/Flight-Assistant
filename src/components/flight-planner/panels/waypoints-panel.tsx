@@ -11,24 +11,33 @@ import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { Camera, Trash2, Sailboat, MapPin } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { PanelProps, Waypoint, POI, HeadingControl, CameraAction } from '../types';
+import type { PanelProps, Waypoint, POI, HeadingControl, CameraAction, FlightPlanSettings } from '../types';
 
-const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSelected, onMultiSelectToggle }: {
+const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSelected, onMultiSelectToggle, settings }: {
     waypoint: Waypoint, 
     displayIndex: number,
     isSelected: boolean, 
     onSelect: (id: number) => void, 
     isMultiSelected: boolean, 
-    onMultiSelectToggle: (id: number) => void
+    onMultiSelectToggle: (id: number) => void,
+    settings: FlightPlanSettings
 }) => {
     
     const handleItemClick = (e: React.MouseEvent) => {
-        // Prevent click from propagating to parent if checkbox is clicked
         if ((e.target as HTMLElement).closest('.waypoint-checkbox-container')) {
             return;
         }
         onSelect(waypoint.id);
     };
+
+    const homeElevation = settings.homeElevationMsl ?? 0;
+    const altitudeRelToHome = waypoint.altitude;
+    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(1)}m`;
+    let aglText = "N/A";
+    if (waypoint.terrainElevationMSL !== null) {
+      const amslWaypoint = homeElevation + altitudeRelToHome;
+      aglText = `${(amslWaypoint - waypoint.terrainElevationMSL).toFixed(1)}m`;
+    }
     
     return (
         <div
@@ -44,7 +53,12 @@ const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSel
           <MapPin className="w-5 h-5 text-primary shrink-0" />
           <div className="flex-1 overflow-hidden">
             <p className="font-semibold truncate">Waypoint {displayIndex}</p>
-            <p className="text-xs text-muted-foreground truncate">{`Alt: ${waypoint.altitude.toFixed(2)}m, Pitch: ${waypoint.gimbalPitch}°`}</p>
+            <div className="text-xs text-muted-foreground leading-tight space-y-0.5">
+                <div>Rel: {altitudeRelToHome.toFixed(1)}m</div>
+                <div>AMSL: {amslText}</div>
+                <div>AGL: {aglText}</div>
+                <div>Pitch: {waypoint.gimbalPitch}° | Hover: {waypoint.hoverTime}s</div>
+            </div>
           </div>
           {waypoint.cameraAction !== 'none' && <Camera className="w-4 h-4 text-accent shrink-0" />}
         </div>
@@ -70,16 +84,25 @@ const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, de
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="space-y-2">
-                    <Label className="flex justify-between">Altitude <span>{waypoint.altitude} m</span></Label>
-                    <Slider value={[waypoint.altitude]} onValueChange={([val]) => handleUpdate('altitude', val)} max={120} step={1} />
+                    <Label htmlFor={`altitude-slider-${waypoint.id}`}>Altitude</Label>
+                    <div className="flex items-center gap-4">
+                        <Slider id={`altitude-slider-${waypoint.id}`} value={[waypoint.altitude]} onValueChange={([val]) => handleUpdate('altitude', val)} max={120} step={1} />
+                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.altitude} m</span>
+                    </div>
                 </div>
                 <div className="space-y-2">
-                    <Label className="flex justify-between">Gimbal Pitch <span>{waypoint.gimbalPitch}°</span></Label>
-                    <Slider value={[waypoint.gimbalPitch]} onValueChange={([val]) => handleUpdate('gimbalPitch', val)} min={-90} max={30} step={1} />
+                    <Label htmlFor={`gimbal-slider-${waypoint.id}`}>Gimbal Pitch</Label>
+                    <div className="flex items-center gap-4">
+                        <Slider id={`gimbal-slider-${waypoint.id}`} value={[waypoint.gimbalPitch]} onValueChange={([val]) => handleUpdate('gimbalPitch', val)} min={-90} max={30} step={1} />
+                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.gimbalPitch}°</span>
+                    </div>
                 </div>
                 <div className="space-y-2">
-                    <Label className="flex justify-between">Hover Time <span>{waypoint.hoverTime} s</span></Label>
-                    <Slider value={[waypoint.hoverTime]} onValueChange={([val]) => handleUpdate('hoverTime', val)} max={30} step={1} />
+                    <Label htmlFor={`hover-slider-${waypoint.id}`}>Hover Time</Label>
+                    <div className="flex items-center gap-4">
+                        <Slider id={`hover-slider-${waypoint.id}`} value={[waypoint.hoverTime]} onValueChange={([val]) => handleUpdate('hoverTime', val)} max={30} step={1} />
+                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.hoverTime} s</span>
+                    </div>
                 </div>
 
                 <div className="space-y-2">
@@ -95,8 +118,11 @@ const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, de
                 </div>
                 {waypoint.headingControl === 'fixed' && (
                      <div className="space-y-2">
-                        <Label className="flex justify-between">Fixed Heading <span>{waypoint.fixedHeading}°</span></Label>
-                        <Slider value={[waypoint.fixedHeading]} onValueChange={([val]) => handleUpdate('fixedHeading', val)} max={359} step={1} />
+                        <Label htmlFor={`heading-slider-${waypoint.id}`}>Fixed Heading</Label>
+                        <div className="flex items-center gap-4">
+                            <Slider id={`heading-slider-${waypoint.id}`} value={[waypoint.fixedHeading]} onValueChange={([val]) => handleUpdate('fixedHeading', val)} max={359} step={1} />
+                            <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.fixedHeading}°</span>
+                        </div>
                     </div>
                 )}
                 {waypoint.headingControl === 'poi_track' && (
@@ -210,34 +236,34 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
             <div className="space-y-2">
                 <div className="flex items-center space-x-2">
                     <Checkbox id="applyAltitude" checked={apply.altitude} onCheckedChange={(checked) => handleApplyChange('altitude', !!checked)} />
-                    <Label htmlFor="applyAltitude" className="flex justify-between w-full cursor-pointer">
-                        <span>Altitude</span>
-                        <span>{updates.altitude ?? 50} m</span>
-                    </Label>
+                    <Label htmlFor="applyAltitude" className="cursor-pointer flex-1">Altitude</Label>
                 </div>
-                <Slider disabled={!apply.altitude} value={[updates.altitude ?? 50]} onValueChange={([val]) => handleValueChange('altitude', val)} max={120} step={1} />
+                <div className="flex items-center gap-4 pl-6">
+                    <Slider disabled={!apply.altitude} value={[updates.altitude ?? 50]} onValueChange={([val]) => handleValueChange('altitude', val)} max={120} step={1} />
+                    <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.altitude ?? 50} m</span>
+                </div>
             </div>
             
             <div className="space-y-2">
-                 <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2">
                     <Checkbox id="applyGimbal" checked={apply.gimbalPitch} onCheckedChange={(checked) => handleApplyChange('gimbalPitch', !!checked)} />
-                    <Label htmlFor="applyGimbal" className="flex justify-between w-full cursor-pointer">
-                        <span>Gimbal Pitch</span>
-                        <span>{updates.gimbalPitch ?? 0}°</span>
-                    </Label>
+                    <Label htmlFor="applyGimbal" className="cursor-pointer flex-1">Gimbal Pitch</Label>
                 </div>
-                <Slider disabled={!apply.gimbalPitch} value={[updates.gimbalPitch ?? 0]} onValueChange={([val]) => handleValueChange('gimbalPitch', val)} min={-90} max={30} step={1} />
+                <div className="flex items-center gap-4 pl-6">
+                    <Slider disabled={!apply.gimbalPitch} value={[updates.gimbalPitch ?? 0]} onValueChange={([val]) => handleValueChange('gimbalPitch', val)} min={-90} max={30} step={1} />
+                    <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.gimbalPitch ?? 0}°</span>
+                </div>
             </div>
 
             <div className="space-y-2">
-                 <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2">
                     <Checkbox id="applyHover" checked={apply.hoverTime} onCheckedChange={(checked) => handleApplyChange('hoverTime', !!checked)} />
-                    <Label htmlFor="applyHover" className="flex justify-between w-full cursor-pointer">
-                        <span>Hover Time</span>
-                        <span>{updates.hoverTime ?? 0} s</span>
-                    </Label>
+                    <Label htmlFor="applyHover" className="cursor-pointer flex-1">Hover Time</Label>
                 </div>
-                <Slider disabled={!apply.hoverTime} value={[updates.hoverTime ?? 0]} onValueChange={([val]) => handleValueChange('hoverTime', val)} max={30} step={1} />
+                <div className="flex items-center gap-4 pl-6">
+                    <Slider disabled={!apply.hoverTime} value={[updates.hoverTime ?? 0]} onValueChange={([val]) => handleValueChange('hoverTime', val)} max={30} step={1} />
+                    <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.hoverTime ?? 0} s</span>
+                </div>
             </div>
 
             <Separator />
@@ -247,23 +273,28 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                     <Checkbox id="applyHeading" checked={apply.headingControl} onCheckedChange={(checked) => handleApplyChange('headingControl', !!checked)} />
                     <Label htmlFor="applyHeading" className="cursor-pointer">Heading</Label>
                 </div>
-                <Select disabled={!apply.headingControl} value={updates.headingControl || ''} onValueChange={(val: HeadingControl | '') => handleHeadingControlChange(val)}>
-                    <SelectTrigger><SelectValue placeholder="Select Heading" /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="auto">Auto (Next Waypoint)</SelectItem>
-                        <SelectItem value="fixed">Fixed Angle</SelectItem>
-                        <SelectItem value="poi_track">Focus on POI</SelectItem>
-                    </SelectContent>
-                </Select>
+                <div className="pl-6">
+                    <Select disabled={!apply.headingControl} value={updates.headingControl || ''} onValueChange={(val: HeadingControl | '') => handleHeadingControlChange(val)}>
+                        <SelectTrigger><SelectValue placeholder="Select Heading" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="auto">Auto (Next Waypoint)</SelectItem>
+                            <SelectItem value="fixed">Fixed Angle</SelectItem>
+                            <SelectItem value="poi_track">Focus on POI</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
             {apply.headingControl && updates.headingControl === 'fixed' && (
-                 <div className="space-y-2 pl-6">
-                    <Label className="flex justify-between">Fixed Heading <span>{updates.fixedHeading ?? 0}°</span></Label>
-                    <Slider value={[updates.fixedHeading ?? 0]} onValueChange={([val]) => handleValueChange('fixedHeading', val)} max={359} step={1} />
+                 <div className="space-y-2 pl-12">
+                    <Label>Fixed Heading</Label>
+                    <div className="flex items-center gap-4">
+                        <Slider value={[updates.fixedHeading ?? 0]} onValueChange={([val]) => handleValueChange('fixedHeading', val)} max={359} step={1} />
+                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.fixedHeading ?? 0}°</span>
+                    </div>
                 </div>
             )}
             {apply.headingControl && updates.headingControl === 'poi_track' && (
-                <div className="space-y-2 pl-6">
+                <div className="space-y-2 pl-12">
                     <Label>Target POI</Label>
                     <Select value={String(updates.targetPoiId || '')} onValueChange={(val) => handleValueChange('targetPoiId', val ? Number(val) : null)}>
                         <SelectTrigger><SelectValue placeholder="Select a POI" /></SelectTrigger>
@@ -281,15 +312,17 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                     <Checkbox id="applyAction" checked={apply.cameraAction} onCheckedChange={(checked) => handleApplyChange('cameraAction', !!checked)} />
                     <Label htmlFor="applyAction" className="cursor-pointer">Camera Action</Label>
                 </div>
-                <Select disabled={!apply.cameraAction} value={updates.cameraAction || ''} onValueChange={(val: CameraAction | '') => handleValueChange('cameraAction', val as CameraAction)}>
-                  <SelectTrigger><SelectValue placeholder="Select an action" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="takePhoto">Take Photo</SelectItem>
-                    <SelectItem value="startRecord">Start Recording</SelectItem>
-                    <SelectItem value="stopRecord">Stop Recording</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="pl-6">
+                    <Select disabled={!apply.cameraAction} value={updates.cameraAction || ''} onValueChange={(val: CameraAction | '') => handleValueChange('cameraAction', val as CameraAction)}>
+                      <SelectTrigger><SelectValue placeholder="Select an action" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="takePhoto">Take Photo</SelectItem>
+                        <SelectItem value="startRecord">Start Recording</SelectItem>
+                        <SelectItem value="stopRecord">Stop Recording</SelectItem>
+                      </SelectContent>
+                    </Select>
+                </div>
              </div>
 
              <Separator />
@@ -313,7 +346,7 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
 }
 
 export function WaypointsPanel(props: PanelProps) {
-  const { waypoints, selectedWaypoint, multiSelectedWaypointIds, selectAllWaypoints, clearWaypoints, selectWaypoint, toggleMultiSelectWaypoint, updateWaypoint, deleteWaypoint, pois } = props;
+  const { waypoints, selectedWaypoint, multiSelectedWaypointIds, selectAllWaypoints, clearWaypoints, selectWaypoint, toggleMultiSelectWaypoint, updateWaypoint, deleteWaypoint, pois, settings } = props;
 
   const selectedWaypointIndex = useMemo(() => {
     if (!selectedWaypoint) return -1;
@@ -357,6 +390,7 @@ export function WaypointsPanel(props: PanelProps) {
                     isMultiSelected={multiSelectedWaypointIds.has(wp.id)}
                     onSelect={selectWaypoint}
                     onMultiSelectToggle={toggleMultiSelectWaypoint}
+                    settings={settings}
                 />
               ))}
               {waypoints.length === 0 && <p className="text-center text-muted-foreground py-8">Click on map to add waypoints.</p>}
