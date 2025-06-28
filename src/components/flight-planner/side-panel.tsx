@@ -5,7 +5,8 @@ import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { PanelType, DialogType, PanelProps } from './types';
+import type { PanelType, PanelProps } from './types';
+import { useTranslation } from '@/hooks/use-translation';
 
 import { SettingsPanel } from './panels/settings-panel';
 import { WaypointsPanel } from './panels/waypoints-panel';
@@ -21,16 +22,17 @@ interface SidePanelProps extends PanelProps {
 }
 
 const panelConfig = {
-  settings: { title: 'Flight Settings', component: SettingsPanel },
-  waypoints: { title: 'Waypoints & Actions', component: WaypointsPanel },
-  pois: { title: 'Points of Interest', component: PoisPanel },
-  missions: { title: 'Survey Missions', component: MissionsPanel },
-  terrain: { title: 'Terrain Tools', component: TerrainPanel },
-  file: { title: 'File Operations', component: FilePanel },
-  stats: { title: 'Flight Statistics', component: StatsPanel },
+  settings: { titleKey: 'flightSettingsTitle', component: SettingsPanel },
+  waypoints: { titleKey: 'waypointsTitle', component: WaypointsPanel },
+  pois: { titleKey: 'poiTitle', component: PoisPanel },
+  missions: { titleKey: 'surveyMissionsTitle', component: MissionsPanel },
+  terrain: { titleKey: 'terrainToolsTitle', component: TerrainPanel },
+  file: { titleKey: 'fileOpsTitle', component: FilePanel },
+  stats: { titleKey: 'statsTitle', component: StatsPanel },
 };
 
 export function SidePanel({ activePanel, onClose, ...props }: SidePanelProps) {
+  const { t } = useTranslation();
   const PanelComponent = activePanel ? panelConfig[activePanel].component : null;
 
   return (
@@ -43,7 +45,7 @@ export function SidePanel({ activePanel, onClose, ...props }: SidePanelProps) {
     >
       <header className="flex items-center justify-between p-4 bg-[#1F2225] flex-shrink-0">
         <h3 className="text-lg font-semibold text-gray-200">
-          {activePanel ? panelConfig[activePanel].title : 'Panel'}
+          {activePanel ? t(panelConfig[activePanel].titleKey) : 'Panel'}
         </h3>
         <Button variant="ghost" size="icon" onClick={onClose} className="text-gray-400 hover:text-white">
           <X className="w-5 h-5" />
