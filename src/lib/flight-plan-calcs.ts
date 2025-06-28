@@ -82,10 +82,6 @@ export function calculateRequiredGimbalPitch(observerAMSL: number, targetAMSL: n
     return Math.round(pitchAngleDeg);
 }
 
-/**
- * Calculates a point on a Catmull-Rom spline.
- * This function should remain private to this module.
- */
 function getCatmullRomPoint(t: number, p0: LatLng, p1: LatLng, p2: LatLng, p3: LatLng): LatLng {
     const t2 = t * t;
     const t3 = t2 * t;
@@ -101,11 +97,6 @@ function getCatmullRomPoint(t: number, p0: LatLng, p1: LatLng, p2: LatLng, p3: L
     return { lat, lng };
 }
 
-/**
- * Creates a smoothed path using Catmull-Rom splines.
- * @param {LatLng[]} points - Array of LatLng points.
- * @returns {LatLng[]} Array of LatLng points for the smoothed path.
- */
 export function createSmoothPath(points: LatLng[]): LatLng[] {
     if (points.length < 2) return points;
     if (points.length === 2) return [points[0], points[1]];
@@ -129,8 +120,6 @@ export function createSmoothPath(points: LatLng[]): LatLng[] {
     return smoothed;
 }
 
-
-// --- Survey Grid Calculations ---
 
 function calculateFootprint(altitudeAGL: number) {
     const { focalLength_mm, sensorWidth_mm, sensorHeight_mm } = CAMERA_CONSTANTS;
@@ -382,7 +371,8 @@ export function validateFlightPlanForImport(plan: any): string[] {
             if (!p || typeof p !== 'object') { errors.push(`POI #${i+1}: Invalid data format.`); return; }
             if (typeof p.id !== 'number') errors.push(`POI #${i+1}: Missing or invalid ID.`);
             if (typeof p.name !== 'string') errors.push(`POI #${i+1} (ID ${p.id}): Missing or invalid name.`);
-            if (!validateCoordinates(p.lat, p.lng)) errors.push(`POI #${i+1} (ID ${p.id}): Invalid coordinates.`);
+            if (!p.latlng || !validateCoordinates(p.latlng.lat, p.latlng.lng)) errors.push(`POI #${i+1} (ID ${p.id}): Invalid coordinates.`);
+            if (p.objectHeightAboveGround && typeof p.objectHeightAboveGround !== 'number') errors.push(`POI #${i+1} (ID ${p.id}): Invalid object height.`);
         });
     }
 
@@ -390,10 +380,12 @@ export function validateFlightPlanForImport(plan: any): string[] {
         plan.waypoints.forEach((wp: any, i: number) => {
             if (!wp || typeof wp !== 'object') { errors.push(`Waypoint #${i+1}: Invalid data format.`); return; }
             if (typeof wp.id !== 'number') errors.push(`Waypoint #${i+1}: Missing or invalid ID.`);
-            if (!validateCoordinates(wp.lat, wp.lng)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid coordinates.`);
+            if (!wp.latlng || !validateCoordinates(wp.latlng.lat, wp.latlng.lng)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid coordinates.`);
             if (typeof wp.altitude !== 'number') errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid altitude.`);
             if (typeof wp.hoverTime !== 'number') errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid hover time.`);
             if (typeof wp.gimbalPitch !== 'number' || !validateGimbalPitch(wp.gimbalPitch)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid gimbal pitch.`);
+            if (!['auto', 'fixed', 'poi_track', 'facade', 'grid', 'orbit'].includes(wp.headingControl)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid heading control.`);
+            if (wp.headingControl === 'poi_track' && typeof wp.targetPoiId !== 'number' && wp.targetPoiId !== null) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid target POI ID.`);
         });
     } else {
         errors.push("Flight plan is missing 'waypoints' array.");
@@ -435,4 +427,13 @@ export function calculateMissionDuration(waypoints: Waypoint[], speed: number): 
     const baseTime = totalDistance / speed;
     const hoverTime = waypoints.reduce((total, wp) => total + (wp.hoverTime || 0), 0);
     return baseTime + hoverTime;
+}
+
+export function calculateMissionDistance(waypoints: Waypoint[]): number {
+    if (!waypoints || waypoints.length < 2) return 0;
+    let totalDistance = 0;
+    for (let i = 1; i < waypoints.length; i++) {
+        totalDistance += haversineDistance(waypoints[i-1].latlng, waypoints[i].latlng);
+    }
+    return totalDistance;
 }
