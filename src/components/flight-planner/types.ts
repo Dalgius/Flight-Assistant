@@ -64,8 +64,30 @@ export interface SurveyGridParams {
   polygon: LatLng[];
 }
 
+export interface FacadeScanParams {
+  side: 'left' | 'right';
+  distance: number;
+  minHeight: number;
+  maxHeight: number;
+  horizontalOverlap: number;
+  verticalOverlap: number;
+  gimbalPitch: number;
+}
+
 export interface DrawingState {
-  mode: 'orbitRadius' | 'surveyArea' | 'surveyAngle' | null;
+  mode: 'orbitRadius' | 'surveyArea' | 'surveyAngle' | 'facadeLine' | null;
   center?: LatLng;
   onComplete: (value: any) => void;
+}
+
+export interface GeneratedWaypointData {
+    latlng: LatLng;
+    options: {
+        altitude: number;
+        cameraAction: CameraAction;
+        headingControl: HeadingControl;
+        fixedHeading: number;
+        gimbalPitch: number;
+        waypointType: WaypointType;
+    }
 }
