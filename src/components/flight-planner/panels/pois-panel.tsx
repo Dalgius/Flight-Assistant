@@ -16,8 +16,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useTranslation } from '@/hooks/use-translation';
 
 export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, deleteMission, editMission, poiName, setPoiName, poiHeight, setPoiHeight, updatePoi }: PanelProps) {
+  const { t } = useTranslation();
   
   const handlePoiUpdate = (poiId: number, field: 'objectHeightAboveGround' | 'terrainElevationMSL', value: string) => {
     const poi = pois.find(p => p.id === poiId);
@@ -41,14 +43,14 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Add New POI</CardTitle>
+          <CardTitle>{t('addPoiTitle')}</CardTitle>
           <CardDescription className="flex items-center gap-2">
-            Enter details, then Ctrl+Click map to place.
+            {t('addPoiDesc')}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger><HelpCircle className="w-4 h-4" /></TooltipTrigger>
                 <TooltipContent>
-                  <p>The POI's terrain elevation is fetched automatically on placement.</p>
+                  <p>{t('addPoiTooltip')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -56,16 +58,16 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="poiName">Next POI Name</Label>
+            <Label htmlFor="poiName">{t('nextPoiNameLabel')}</Label>
             <Input 
               id="poiName" 
-              placeholder="e.g., Main Tower"
+              placeholder={t('nextPoiNamePlaceholder')}
               value={poiName}
               onChange={(e) => setPoiName(e.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="poiObjectHeight">Next POI Object Height (m)</Label>
+            <Label htmlFor="poiObjectHeight">{t('nextPoiHeightLabel')}</Label>
             <Input 
               id="poiObjectHeight" 
               type="number" 
@@ -78,7 +80,7 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
 
       <Card>
         <CardHeader>
-          <CardTitle>POI List</CardTitle>
+          <CardTitle>{t('poiListTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[250px] w-full pr-4">
@@ -91,7 +93,7 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
                       <LocateFixed className="w-5 h-5 text-accent shrink-0" />
                       <div className="flex-1">
                         <p className="font-semibold">{poi.name}</p>
-                        <p className="text-xs text-muted-foreground">Final AMSL: {poi.altitude.toFixed(1)}m</p>
+                        <p className="text-xs text-muted-foreground">{t('finalAmsl')}: {poi.altitude.toFixed(1)}m</p>
                       </div>
                       <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deletePoi(poi.id)}>
                         <Trash2 className="w-4 h-4" />
@@ -100,12 +102,12 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
                     {/* Inline editors */}
                     <div className="space-y-2 text-xs">
                         <div className="flex items-center gap-2">
-                            <Label htmlFor={`poi_h_${poi.id}`} className="flex-1">Obj. Height (m)</Label>
+                            <Label htmlFor={`poi_h_${poi.id}`} className="flex-1">{t('poiObjHeightLabel')}</Label>
                             <Input id={`poi_h_${poi.id}`} type="number" value={poi.objectHeightAboveGround} onChange={(e) => handlePoiUpdate(poi.id, 'objectHeightAboveGround', e.target.value)} className="h-7 w-20"/>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Label htmlFor={`poi_e_${poi.id}`} className="flex-1">Terrain Elev. (m)</Label>
-                            <Input id={`poi_e_${poi.id}`} type="number" value={poi.terrainElevationMSL ?? ''} placeholder="N/A" onChange={(e) => handlePoiUpdate(poi.id, 'terrainElevationMSL', e.target.value)} className="h-7 w-20"/>
+                            <Label htmlFor={`poi_e_${poi.id}`} className="flex-1">{t('poiTerrainElevLabel')}</Label>
+                            <Input id={`poi_e_${poi.id}`} type="number" value={poi.terrainElevationMSL ?? ''} placeholder={t('na')} onChange={(e) => handlePoiUpdate(poi.id, 'terrainElevationMSL', e.target.value)} className="h-7 w-20"/>
                         </div>
                     </div>
 
@@ -115,8 +117,8 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
                             <div className="flex items-center gap-2">
                                 <Orbit className="w-4 h-4 text-green-500" />
                                 <div>
-                                    <p className="text-sm font-medium">Orbit Mission</p>
-                                    <p className="text-xs text-muted-foreground">{orbitMission.waypointIds.length} Waypoints</p>
+                                    <p className="text-sm font-medium">{t('createOrbitBtn')}</p>
+                                    <p className="text-xs text-muted-foreground">{t('missionWaypointCount', { count: orbitMission.waypointIds.length })}</p>
                                 </div>
                             </div>
                             <div className="flex items-center">
@@ -133,13 +135,13 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
                   </div>
                 )
               })}
-              {pois.length === 0 && <p className="text-center text-muted-foreground py-8">No POIs added.</p>}
+              {pois.length === 0 && <p className="text-center text-muted-foreground py-8">{t('noPoisAdded')}</p>}
             </div>
           </ScrollArea>
           <Separator className="my-4" />
           <Button className="w-full" onClick={() => onOpenDialog('orbit')} disabled={!pois || pois.length === 0}>
             <Orbit className="w-4 h-4 mr-2" />
-            Create Orbit Mission
+            {t('createOrbitBtn')}
           </Button>
         </CardContent>
       </Card>
