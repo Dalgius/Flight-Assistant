@@ -1,7 +1,13 @@
 
-import type { LatLng } from "@/components/flight-planner/types";
+import type { LatLng, Waypoint, CameraAction, HeadingControl, WaypointType } from "@/components/flight-planner/types";
 
 export const R_EARTH = 6371000; // Earth's radius in meters
+
+export const CAMERA_CONSTANTS = {
+    sensorWidth_mm: 8.976,
+    sensorHeight_mm: 6.716,
+    focalLength_mm: 6.88,
+};
 
 export function toRad(degrees: number): number {
     return degrees * Math.PI / 180;
@@ -103,4 +109,129 @@ export function createSmoothPath(points: LatLng[]): LatLng[] {
         }
     }
     return smoothed;
+}
+
+
+// --- Survey Grid Calculations ---
+
+function calculateFootprint(altitudeAGL: number) {
+    const { focalLength_mm, sensorWidth_mm, sensorHeight_mm } = CAMERA_CONSTANTS;
+    if (!focalLength_mm || focalLength_mm === 0) return { width: 0, height: 0 };
+    const footprintWidth = (sensorWidth_mm / focalLength_mm) * altitudeAGL;
+    const footprintHeight = (sensorHeight_mm / focalLength_mm) * altitudeAGL;
+    return { width: footprintWidth, height: footprintHeight };
+}
+  
+function rotateLatLng(pointLatLng: LatLng, centerLatLng: LatLng, angleRadians: number): LatLng {
+    const cosAngle = Math.cos(angleRadians);
+    const sinAngle = Math.sin(angleRadians);
+    const dLngScaled = (pointLatLng.lng - centerLatLng.lng) * Math.cos(toRad(centerLatLng.lat));
+    const dLat = pointLatLng.lat - centerLatLng.lat;
+    
+    const rotatedDLngScaled = dLngScaled * cosAngle - dLat * sinAngle;
+    const rotatedDLat = dLngScaled * sinAngle + dLat * cosAngle;
+
+    const finalLng = centerLatLng.lng + (rotatedDLngScaled / Math.cos(toRad(centerLatLng.lat)));
+    const finalLat = centerLatLng.lat + rotatedDLat;
+    return { lat: finalLat, lng: finalLng };
+}
+
+function isPointInPolygon(point: LatLng, polygonVertices: LatLng[]): boolean {
+    if (!point || !polygonVertices || polygonVertices.length < 3) return false;
+    let isInside = false;
+    const x = point.lng, y = point.lat;
+    for (let i = 0, j = polygonVertices.length - 1; i < polygonVertices.length; j = i++) {
+        const xi = polygonVertices[i].lng, yi = polygonVertices[i].lat;
+        const xj = polygonVertices[j].lng, yj = polygonVertices[j].lat;
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) isInside = !isInside;
+    }
+    return isInside;
+}
+
+interface GridWaypointData {
+    latlng: LatLng;
+    options: {
+        altitude: number;
+        cameraAction: CameraAction;
+        headingControl: HeadingControl;
+        fixedHeading: number;
+        gimbalPitch: number;
+        waypointType: WaypointType;
+    }
+}
+
+export function generateSurveyGridWaypoints(
+    polygonLatLngs: LatLng[], 
+    params: { altitude: number; sidelap: number; frontlap: number; angle: number; }
+): GridWaypointData[] {
+    const { altitude, sidelap, frontlap, angle } = params;
+    
+    const MIN_POLYGON_POINTS = 3;
+    if (!polygonLatLngs || polygonLatLngs.length < MIN_POLYGON_POINTS) return [];
+    
+    const footprint = calculateFootprint(altitude);
+    if (footprint.width === 0 || footprint.height === 0) return [];
+
+    const fixedGridHeading = angle;
+    const rotationAngleDeg = -(fixedGridHeading); 
+    const actualLineSpacing = footprint.width * (1 - sidelap / 100);
+    const actualDistanceBetweenPhotos = footprint.height * (1 - frontlap / 100);
+    const rotationCenter = polygonLatLngs[0];
+    const angleRad = toRad(rotationAngleDeg);
+    const rotatedPolygonLatLngs = polygonLatLngs.map(p => rotateLatLng(p, rotationCenter, -angleRad));
+
+    let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    rotatedPolygonLatLngs.forEach(p => {
+        minLat = Math.min(minLat, p.lat);
+        maxLat = Math.max(maxLat, p.lat);
+        minLng = Math.min(minLng, p.lng);
+        maxLng = Math.max(maxLng, p.lng);
+    });
+    
+    const lineSpacingRotLng = (actualLineSpacing / (R_EARTH * Math.cos(toRad(rotationCenter.lat)))) * (180 / Math.PI);
+    let currentRotLng = minLng;
+    let scanDir = 1;
+    const finalWaypointsData: GridWaypointData[] = [];
+
+    while (currentRotLng <= maxLng + lineSpacingRotLng * 0.5) {
+        const photoSpacingRotLat = (actualDistanceBetweenPhotos / R_EARTH) * (180 / Math.PI);
+        const lineCandRot = [];
+
+        if (scanDir === 1) { 
+            for (let lat = minLat; lat <= maxLat; lat += photoSpacingRotLat) lineCandRot.push({ lat, lng: currentRotLng });
+        } else {
+            for (let lat = maxLat; lat >= minLat; lat -= photoSpacingRotLat) lineCandRot.push({ lat, lng: currentRotLng });
+        }
+
+        const wpOptions = { 
+            altitude: altitude, 
+            cameraAction: 'takePhoto' as const, 
+            headingControl: 'fixed' as const, 
+            fixedHeading: Math.round(fixedGridHeading),
+            gimbalPitch: -90, 
+            waypointType: 'grid' as const,
+        };
+
+        lineCandRot.forEach(rotPt => {
+            const actualGeoPt = rotateLatLng(rotPt, rotationCenter, angleRad);
+            if (isPointInPolygon(actualGeoPt, polygonLatLngs)) {
+                finalWaypointsData.push({ latlng: actualGeoPt, options: wpOptions });
+            }
+        });
+
+        currentRotLng += lineSpacingRotLng;
+        scanDir *= -1;
+    }
+    
+    const uniqueWaypoints: GridWaypointData[] = [];
+    const seenKeys = new Set<string>();
+    for (const wp of finalWaypointsData) {
+        const key = `${wp.latlng.lat.toFixed(7)},${wp.latlng.lng.toFixed(7)}`;
+        if (!seenKeys.has(key)) {
+            uniqueWaypoints.push(wp);
+            seenKeys.add(key);
+        }
+    }
+    return uniqueWaypoints;
 }
