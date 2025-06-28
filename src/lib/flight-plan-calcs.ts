@@ -57,3 +57,50 @@ export function calculateRequiredGimbalPitch(observerAMSL: number, targetAMSL: n
     
     return Math.round(pitchAngleDeg);
 }
+
+/**
+ * Calculates a point on a Catmull-Rom spline.
+ * This function should remain private to this module.
+ */
+function getCatmullRomPoint(t: number, p0: LatLng, p1: LatLng, p2: LatLng, p3: LatLng): LatLng {
+    const t2 = t * t;
+    const t3 = t2 * t;
+
+    const f1 = -0.5 * t3 + t2 - 0.5 * t;
+    const f2 = 1.5 * t3 - 2.5 * t2 + 1;
+    const f3 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+    const f4 = 0.5 * t3 - 0.5 * t2;
+
+    const lat = p0.lat * f1 + p1.lat * f2 + p2.lat * f3 + p3.lat * f4;
+    const lng = p0.lng * f1 + p1.lng * f2 + p2.lng * f3 + p3.lng * f4;
+
+    return { lat, lng };
+}
+
+/**
+ * Creates a smoothed path using Catmull-Rom splines.
+ * @param {LatLng[]} points - Array of LatLng points.
+ * @returns {LatLng[]} Array of LatLng points for the smoothed path.
+ */
+export function createSmoothPath(points: LatLng[]): LatLng[] {
+    if (points.length < 2) return points;
+    if (points.length === 2) return [points[0], points[1]];
+
+    const smoothed: LatLng[] = [];
+    const numSegmentsBetweenPoints = 15;
+
+    smoothed.push(points[0]);
+
+    for (let i = 0; i < points.length - 1; i++) {
+        const p0 = (i === 0) ? points[0] : points[i - 1];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = (i === points.length - 2) ? points[points.length - 1] : points[i + 2];
+
+        for (let j = 1; j <= numSegmentsBetweenPoints; j++) {
+            const t = j / numSegmentsBetweenPoints;
+            smoothed.push(getCatmullRomPoint(t, p0, p1, p2, p3));
+        }
+    }
+    return smoothed;
+}
