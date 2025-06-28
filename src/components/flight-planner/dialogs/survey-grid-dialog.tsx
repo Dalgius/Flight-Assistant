@@ -23,6 +23,7 @@ interface SurveyGridDialogProps {
   onDrawArea: () => void;
   onDrawAngle: () => void;
   onCreateGrid: () => void;
+  isEditing: boolean;
 }
 
 export function SurveyGridDialog({
@@ -33,6 +34,7 @@ export function SurveyGridDialog({
   onDrawArea,
   onDrawAngle,
   onCreateGrid,
+  isEditing,
 }: SurveyGridDialogProps) {
   
   const handleNumberValueChange = (field: keyof Omit<SurveyGridParams, 'polygon'>, value: string) => {
@@ -45,7 +47,7 @@ export function SurveyGridDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Survey Grid</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit Survey Grid' : 'Create Survey Grid'}</DialogTitle>
           <DialogDescription>
             {isAreaDefined
               ? `Area defined with ${params.polygon.length} points. Adjust parameters and generate the grid.`
@@ -107,7 +109,7 @@ export function SurveyGridDialog({
           </Button>
           <Button disabled={!isAreaDefined} onClick={onCreateGrid}>
             <Grid3x3 className="w-4 h-4 mr-2" />
-            Generate Grid
+            {isEditing ? 'Update Grid' : 'Generate Grid'}
           </Button>
         </DialogFooter>
       </DialogContent>
