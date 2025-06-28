@@ -162,9 +162,9 @@ const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { w
     return null;
 };
 
-const createWaypointIcon = (waypoint: Waypoint, isSelectedSingle: boolean, isMultiSelected: boolean, isHomePoint: boolean, waypoints: Waypoint[], pois: POI[]): L.DivIcon => {
+const createWaypointIcon = (waypoint: Waypoint, displayIndex: number, isSelectedSingle: boolean, isMultiSelected: boolean, isHomePoint: boolean, waypoints: Waypoint[], pois: POI[]): L.DivIcon => {
     let bgColor = '#3498db';
-    let iconHtmlContent = String(waypoint.id);
+    let iconHtmlContent = String(displayIndex);
     let borderStyle = '2px solid white';
     let classNameSuffix = '';
     let currentSize = 24;
@@ -261,12 +261,12 @@ const createWaypointIcon = (waypoint: Waypoint, isSelectedSingle: boolean, isMul
     });
 };
 
-const WaypointMarker = ({ waypoint, waypoints, pois, isSelected, isMultiSelected, onClick, onDragEnd }: any) => {
+const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, isSelected, isMultiSelected, onClick, onDragEnd }: any) => {
     const markerRef = useRef(null);
     const isHome = waypoints[0]?.id === waypoint.id;
 
-    const icon = useMemo(() => createWaypointIcon(waypoint, isSelected, isMultiSelected, isHome, waypoints, pois), 
-        [waypoint, isSelected, isMultiSelected, isHome, waypoints, pois]);
+    const icon = useMemo(() => createWaypointIcon(waypoint, displayIndex, isSelected, isMultiSelected, isHome, waypoints, pois), 
+        [waypoint, displayIndex, isSelected, isMultiSelected, isHome, waypoints, pois]);
     
     const zIndexOffset = isHome ? 1500 : (isSelected ? 1000 : (isMultiSelected ? 500 : 0));
 
@@ -385,10 +385,11 @@ export function MapView(props: MapViewProps) {
 
               {pathCoords.length > 1 && <Polyline positions={pathCoords} color="#3498db" weight={3} dashArray={pathType === 'straight' ? '5, 5' : undefined} />}
 
-              {waypoints.map(wp => (
+              {waypoints.map((wp, index) => (
                 <WaypointMarker 
                     key={wp.id} 
                     waypoint={wp}
+                    displayIndex={index + 1}
                     waypoints={waypoints}
                     pois={pois}
                     isSelected={selectedWaypointId === wp.id}
