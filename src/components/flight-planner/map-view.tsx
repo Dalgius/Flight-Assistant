@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Waypoint, POI, LatLng, DrawingState } from './types';
+import type { Waypoint, POI, LatLng, DrawingState, FlightPlanSettings } from './types';
 import { calculateBearing, createSmoothPath } from '@/lib/flight-plan-calcs';
 
 // Fix for default Leaflet icon path issue with bundlers
@@ -51,7 +51,6 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
         click(e) {
             if (drawingState.mode === 'surveyArea') {
                 const newPoints = [...surveyPolygonPoints, e.latlng];
-                 // Check if user clicked on the first point to close polygon (min 3 points)
                 const clickTolerance = map.getZoom() > 15 ? 20 / (map.getZoom() - 14) : 20;
                 if (surveyPolygonPoints.length >= 3 && L.latLng(e.latlng).distanceTo(L.latLng(surveyPolygonPoints[0])) < clickTolerance ) {
                     drawingState.onComplete(surveyPolygonPoints); 
@@ -130,7 +129,6 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
 const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
     
-    // Fit bounds on initial load
     useEffect(() => {
       const allPoints = [...waypoints.map(wp => wp.latlng), ...pois.map(p => p.latlng)];
       if (allPoints.length > 0) {
@@ -139,17 +137,14 @@ const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { w
             map.fitBounds(bounds.pad(0.1));
         }
       } else {
-        map.setView([42.5, 12.5], 6); // Default view for Italy
+        map.setView([42.5, 12.5], 6);
       }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     
     useEffect(() => {
-        // Invalidate map size when panel opens/closes to fix gray areas
         setTimeout(() => map.invalidateSize(), 310);
     }, [isPanelOpen, map]);
 
-    // Pan to newly selected waypoint
     useEffect(() => {
         if (selectedWaypointId) {
             const wp = waypoints.find(w => w.id === selectedWaypointId);
@@ -308,7 +303,6 @@ const PoiMarker = ({ poi, onClick, onDragEnd }: any) => {
     });
     
     const eventHandlers = useMemo(() => ({
-        // POI drag handling can be added here if needed
         click() {
             // POI selection logic can be added here
         }
@@ -323,6 +317,7 @@ interface MapViewProps {
   waypoints: Waypoint[];
   pois: POI[];
   pathType: 'straight' | 'curved';
+  altitudeAdaptationMode: FlightPlanSettings['altitudeAdaptationMode'];
   selectedWaypointId: number | null;
   multiSelectedWaypointIds: Set<number>;
   drawingState: DrawingState;
@@ -346,7 +341,7 @@ const defaultLayer = {
 };
 
 export function MapView(props: MapViewProps) {
-  const { isPanelOpen, waypoints, pois, pathType, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
+  const { isPanelOpen, waypoints, pois, pathType, altitudeAdaptationMode, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
   const [isSatelliteView, setIsSatelliteView] = useState(false);
   const mapRef = useRef<L.Map>(null);
 
@@ -361,6 +356,21 @@ export function MapView(props: MapViewProps) {
     }
     return points;
   }, [waypoints, pathType]);
+
+  const pathOptions = useMemo(() => {
+    const color = (() => {
+        switch (altitudeAdaptationMode) {
+            case 'agl': return '#27ae60'; // Green
+            case 'amsl': return '#e67e22'; // Orange
+            default: return '#3498db'; // Blue
+        }
+    })();
+    return {
+        color: color,
+        weight: 3,
+        dashArray: pathType === 'straight' ? '5, 5' : undefined,
+    };
+  }, [altitudeAdaptationMode, pathType]);
   
   return (
     <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[350px]' : 'ml-0')}>
@@ -383,7 +393,7 @@ export function MapView(props: MapViewProps) {
               <MapInteractionManager onMapClick={onMapClick} drawingState={drawingState} />
 
 
-              {pathCoords.length > 1 && <Polyline positions={pathCoords} color="#3498db" weight={3} dashArray={pathType === 'straight' ? '5, 5' : undefined} />}
+              {pathCoords.length > 1 && <Polyline pathOptions={pathOptions} positions={pathCoords} />}
 
               {waypoints.map((wp, index) => (
                 <WaypointMarker 
@@ -424,3 +434,5 @@ export function MapView(props: MapViewProps) {
     </div>
   );
 }
+
+  
