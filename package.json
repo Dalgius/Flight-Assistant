@@ -32,6 +32,7 @@
     "@radix-ui/react-tooltip": "^1.1.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "leaflet-geometryutil": "^0.10.2",
     "lucide-react": "^0.475.0",
@@ -44,6 +45,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/jszip": "^3.4.1",
     "@types/leaflet": "^1.9.12",
     "@types/node": "^20",
     "@types/react": "^18.3.0",
