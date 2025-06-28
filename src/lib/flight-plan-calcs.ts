@@ -1,5 +1,4 @@
 
-
 import type { LatLng, Waypoint, CameraAction, HeadingControl, WaypointType, FacadeScanParams, GeneratedWaypointData, FlightPlan, POI } from "@/components/flight-planner/types";
 
 export const R_EARTH = 6371000; // Earth's radius in meters
@@ -394,22 +393,22 @@ export function validateFlightPlanForImport(plan: any): string[] {
 }
 
 export function validateFlightPlanForWpml(waypoints: Waypoint[]): string[] {
-    const errors = [];
+    const errors: string[] = [];
     if (!waypoints || waypoints.length < 2) {
-        errors.push("At least 2 waypoints are required for a mission.");
+        errors.push("error_min_waypoints");
     }
     const djiAltitudeMin = 2;
     const djiAltitudeMax = 500;
 
     waypoints.forEach((wp, i) => {
         if (!wp.latlng || !validateCoordinates(wp.latlng.lat, wp.latlng.lng)) {
-            errors.push(`Waypoint ${i + 1}: Invalid coordinates.`);
+            errors.push(`error_invalid_coordinates`);
         }
         if (typeof wp.altitude !== 'number' || wp.altitude < djiAltitudeMin || wp.altitude > djiAltitudeMax) {
-            errors.push(`Waypoint ${i + 1}: Altitude out of range (${djiAltitudeMin}-${djiAltitudeMax}m).`);
+            errors.push(`error_altitude_range`);
         }
         if (wp.gimbalPitch !== undefined && !validateGimbalPitch(wp.gimbalPitch)) {
-            errors.push(`Waypoint ${i + 1}: Gimbal pitch out of range (-90 to +60).`);
+            errors.push(`error_gimbal_range`);
         }
     });
     
