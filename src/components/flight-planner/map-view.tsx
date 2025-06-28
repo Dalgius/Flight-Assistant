@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Waypoint, POI, LatLng, DrawingState } from './types';
-import { calculateBearing } from '@/lib/flight-plan-calcs';
+import { calculateBearing, createSmoothPath } from '@/lib/flight-plan-calcs';
 
 // Fix for default Leaflet icon path issue with bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -301,7 +301,14 @@ export function MapView(props: MapViewProps) {
   const toggleSatellite = () => setIsSatelliteView(prev => !prev);
   const currentLayer = isSatelliteView ? satelliteLayer : defaultLayer;
 
-  const pathCoords = useMemo(() => waypoints.map(wp => wp.latlng), [waypoints]);
+  const pathCoords = useMemo(() => {
+    if (waypoints.length < 2) return [];
+    const points = waypoints.map(wp => wp.latlng);
+    if (pathType === 'curved') {
+        return createSmoothPath(points);
+    }
+    return points;
+  }, [waypoints, pathType]);
   
   return (
     <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[350px]' : 'ml-0')}>
