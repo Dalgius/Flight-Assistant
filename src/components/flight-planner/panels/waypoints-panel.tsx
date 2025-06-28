@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -118,7 +119,7 @@ const SingleWaypointEditor = ({ waypoint, pois, updateWaypoint, deleteWaypoint }
     );
 };
 
-const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, clearMultiSelection }: PanelProps) => {
+const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, clearMultiSelection, deleteMultiSelectedWaypoints }: PanelProps) => {
     const [updates, setUpdates] = useState<Partial<Waypoint>>({
         altitude: 50,
         gimbalPitch: 0,
@@ -280,15 +281,20 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
 
              <Separator />
 
-            <div className="flex gap-2">
-                <Button className="flex-1" onClick={handleBatchUpdate}>
-                    Apply to Selected
+             <div className="flex flex-col gap-2 pt-2">
+                <Button className="w-full" onClick={handleBatchUpdate}>
+                    Apply Changes
                 </Button>
-                <Button variant="secondary" onClick={clearMultiSelection}>
-                    Clear Selection
-                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                    <Button variant="secondary" onClick={clearMultiSelection}>
+                        Clear Selection
+                    </Button>
+                    <Button variant="destructive" onClick={deleteMultiSelectedWaypoints}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete Selected
+                    </Button>
+                </div>
             </div>
-
           </CardContent>
         </Card>
     );
