@@ -1,5 +1,5 @@
 
-import type { LatLng, Waypoint, CameraAction, HeadingControl, WaypointType } from "@/components/flight-planner/types";
+import type { LatLng, Waypoint, CameraAction, HeadingControl, WaypointType, FacadeScanParams, GeneratedWaypointData } from "@/components/flight-planner/types";
 
 export const R_EARTH = 6371000; // Earth's radius in meters
 
@@ -46,6 +46,23 @@ export function calculateBearing(point1LatLng: LatLng, point2LatLng: LatLng): nu
     return (brng + 360) % 360; 
 }
 
+export function destinationPoint(startLatLng: LatLng, bearingDeg: number, distanceMeters: number): LatLng {
+    const angularDistance = distanceMeters / R_EARTH; 
+    const bearingRad = toRad(bearingDeg);
+
+    const lat1 = toRad(startLatLng.lat);
+    const lon1 = toRad(startLatLng.lng);
+
+    const lat2 = Math.asin(Math.sin(lat1) * Math.cos(angularDistance) +
+                           Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearingRad));
+
+    let lon2 = lon1 + Math.atan2(Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(lat1),
+                                 Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2));
+
+    lon2 = (lon2 * 180 / Math.PI + 540) % 360 - 180;
+
+    return { lat: lat2 * 180 / Math.PI, lng: lon2 };
+}
 
 export function calculateRequiredGimbalPitch(observerAMSL: number, targetAMSL: number, horizontalDistance: number): number {
     if (horizontalDistance <= 0.1) {
@@ -149,22 +166,10 @@ function isPointInPolygon(point: LatLng, polygonVertices: LatLng[]): boolean {
     return isInside;
 }
 
-interface GridWaypointData {
-    latlng: LatLng;
-    options: {
-        altitude: number;
-        cameraAction: CameraAction;
-        headingControl: HeadingControl;
-        fixedHeading: number;
-        gimbalPitch: number;
-        waypointType: WaypointType;
-    }
-}
-
 export function generateSurveyGridWaypoints(
     polygonLatLngs: LatLng[], 
     params: { altitude: number; sidelap: number; frontlap: number; angle: number; }
-): GridWaypointData[] {
+): GeneratedWaypointData[] {
     const { altitude, sidelap, frontlap, angle } = params;
     
     const MIN_POLYGON_POINTS = 3;
@@ -192,7 +197,7 @@ export function generateSurveyGridWaypoints(
     const lineSpacingRotLng = (actualLineSpacing / (R_EARTH * Math.cos(toRad(rotationCenter.lat)))) * (180 / Math.PI);
     let currentRotLng = minLng;
     let scanDir = 1;
-    const finalWaypointsData: GridWaypointData[] = [];
+    const finalWaypointsData: GeneratedWaypointData[] = [];
 
     while (currentRotLng <= maxLng + lineSpacingRotLng * 0.5) {
         const photoSpacingRotLat = (actualDistanceBetweenPhotos / R_EARTH) * (180 / Math.PI);
@@ -224,7 +229,7 @@ export function generateSurveyGridWaypoints(
         scanDir *= -1;
     }
     
-    const uniqueWaypoints: GridWaypointData[] = [];
+    const uniqueWaypoints: GeneratedWaypointData[] = [];
     const seenKeys = new Set<string>();
     for (const wp of finalWaypointsData) {
         const key = `${wp.latlng.lat.toFixed(7)},${wp.latlng.lng.toFixed(7)}`;
@@ -234,4 +239,68 @@ export function generateSurveyGridWaypoints(
         }
     }
     return uniqueWaypoints;
+}
+
+export function generateFacadeWaypoints(
+  startPoint: LatLng,
+  endPoint: LatLng,
+  params: FacadeScanParams
+): GeneratedWaypointData[] {
+    const { side, distance, minHeight, maxHeight, gimbalPitch, horizontalOverlap, verticalOverlap } = params;
+    
+    // The bearing is simply calculated from the start and end points of the drawn line.
+    const facadeBearing = calculateBearing(startPoint, endPoint);
+    
+    // 'left' or 'right' is relative to this bearing.
+    const offsetAngle = (side === 'left') ? -90 : 90;
+    const offsetBearing = (facadeBearing + offsetAngle + 360) % 360;
+    const droneHeading = (facadeBearing - offsetAngle + 360) % 360;
+
+    const { sensorWidth_mm, sensorHeight_mm, focalLength_mm } = CAMERA_CONSTANTS;
+    const verticalFootprint = (sensorHeight_mm / focalLength_mm) * distance;
+    const horizontalFootprint = (sensorWidth_mm / focalLength_mm) * distance;
+    
+    const verticalStep = verticalFootprint * (1 - verticalOverlap / 100);
+    const horizontalStep = horizontalFootprint * (1 - horizontalOverlap / 100);
+
+    const facadeLength = haversineDistance(startPoint, endPoint);
+    
+    // Match original project's calculation for number of points
+    const numHorizontalPoints = facadeLength > 0 ? Math.floor(facadeLength / horizontalStep) + 1 : 1;
+    const numVerticalPoints = maxHeight > minHeight ? Math.floor((maxHeight - minHeight) / verticalStep) + 1 : 1;
+    
+    let scanDirection = 1;
+    const finalWaypointsData: GeneratedWaypointData[] = [];
+
+    for (let i = 0; i < numVerticalPoints; i++) {
+        const currentHeight = Math.min(maxHeight, minHeight + i * verticalStep);
+        
+        for (let j = 0; j < numHorizontalPoints; j++) {
+            let pointIndex = scanDirection === 1 ? j : (numHorizontalPoints - 1 - j);
+            
+            const fractionAlongFacade = numHorizontalPoints > 1 
+                                        ? Math.min(1, (pointIndex * horizontalStep) / facadeLength) 
+                                        : 0;
+            
+            const pointOnFacade = {
+                lat: startPoint.lat + (endPoint.lat - startPoint.lat) * fractionAlongFacade,
+                lng: startPoint.lng + (endPoint.lng - startPoint.lng) * fractionAlongFacade
+            };
+            
+            const dronePosition = destinationPoint(pointOnFacade, offsetBearing, distance);
+
+            const wpOptions = {
+                altitude: currentHeight,
+                headingControl: 'fixed' as const,
+                fixedHeading: Math.round(droneHeading),
+                gimbalPitch: gimbalPitch,
+                cameraAction: 'takePhoto' as const,
+                waypointType: 'facade' as const
+            };
+
+            finalWaypointsData.push({ latlng: dronePosition, options: wpOptions });
+        }
+        scanDirection *= -1;
+    }
+    return finalWaypointsData;
 }
