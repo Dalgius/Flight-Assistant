@@ -31,9 +31,10 @@ interface OrbitDialogProps {
   onParamsChange: (params: OrbitDialogParams) => void;
   onCreateOrbit: () => void;
   onDrawRadius: () => void;
+  isEditing: boolean;
 }
 
-export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, onCreateOrbit, onDrawRadius }: OrbitDialogProps) {
+export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, onCreateOrbit, onDrawRadius, isEditing }: OrbitDialogProps) {
   
   useEffect(() => {
     if (open && pois.length > 0) {
@@ -57,7 +58,7 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Orbit Mission</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit Orbit Mission' : 'Create Orbit Mission'}</DialogTitle>
           <DialogDescription>
             Generate a circular flight path around a point of interest.
           </DialogDescription>
@@ -112,7 +113,7 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
           </Button>
           <Button onClick={onCreateOrbit} disabled={!canCreate}>
             <Orbit className="w-4 h-4 mr-2" />
-            Create Orbit
+            {isEditing ? 'Update Orbit' : 'Create Orbit'}
           </Button>
         </DialogFooter>
       </DialogContent>
