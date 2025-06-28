@@ -1,13 +1,23 @@
 
-
 export type PanelType = 'settings' | 'waypoints' | 'pois' | 'missions' | 'terrain' | 'file' | 'stats';
 
 export type DialogType = 'orbit' | 'survey' | 'facade' | null;
 
+export interface SurveyMission {
+  id: number;
+  name: string;
+  type: 'Grid' | 'Facade' | 'Orbit';
+  waypointIds: number[];
+  parameters: any;
+  polygon?: LatLng[];
+  line?: { start: LatLng; end: LatLng };
+}
+
 export interface PanelProps {
-  // This is a generic interface for props passed to all panels
-  // It will be expanded as more functionality is added
   [key: string]: any; 
+  missions?: SurveyMission[];
+  deleteMission?: (id: number) => void;
+  editMission?: (id: number) => void;
 }
 
 export interface LatLng {
