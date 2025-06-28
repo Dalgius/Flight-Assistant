@@ -1,18 +1,14 @@
+
 "use client";
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { AppWindow, Grid3x3, Building2, Trash2 } from 'lucide-react';
-import type { PanelProps } from '../types';
+import { AppWindow, Grid3x3, Building2, Trash2, Pencil } from 'lucide-react';
+import type { PanelProps, SurveyMission } from '../types';
 
-const mockMissions = [
-  { id: 1, name: 'Main Campus Survey', type: 'Grid' },
-  { id: 2, name: 'Building A Facade', type: 'Facade' },
-  { id: 3, 'name': 'Main Tower Orbit', 'type': 'Orbit' }
-];
 
-export function MissionsPanel({ onOpenDialog }: PanelProps) {
+export function MissionsPanel({ onOpenDialog, missions = [], deleteMission, editMission }: PanelProps) {
   return (
     <div className="space-y-6">
       <Card>
@@ -38,18 +34,30 @@ export function MissionsPanel({ onOpenDialog }: PanelProps) {
         <CardContent>
           <ScrollArea className="h-[150px] w-full">
             <div className="space-y-2">
-              {mockMissions.map((mission) => (
+              {missions.length === 0 && (
+                <p className="text-center text-muted-foreground py-8">No missions created yet.</p>
+              )}
+              {missions.map((mission: SurveyMission) => (
                 <div key={mission.id} className="p-3 rounded-lg border flex items-center gap-3">
                   {mission.type === 'Grid' && <Grid3x3 className="w-5 h-5 text-primary" />}
                   {mission.type === 'Facade' && <Building2 className="w-5 h-5 text-accent" />}
                   {mission.type === 'Orbit' && <AppWindow className="w-5 h-5 text-green-500" />}
                   <div className="flex-1">
                     <p className="font-semibold">{mission.name}</p>
-                    <p className="text-xs text-muted-foreground">{mission.type} Mission</p>
+                    <p className="text-xs text-muted-foreground">{mission.type} Mission ({mission.waypointIds.length} WPs)</p>
                   </div>
-                  <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive">
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center">
+                    {editMission && (mission.type === 'Grid' || mission.type === 'Facade') && (
+                      <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-primary" onClick={() => editMission(mission.id)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {deleteMission && (
+                      <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deleteMission(mission.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
