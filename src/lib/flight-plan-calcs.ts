@@ -1,6 +1,7 @@
+
 import type { LatLng } from "@/components/flight-planner/types";
 
-const R_EARTH = 6371000; // Earth's radius in meters
+export const R_EARTH = 6371000; // Earth's radius in meters
 
 export function toRad(degrees: number): number {
     return degrees * Math.PI / 180;
