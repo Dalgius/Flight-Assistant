@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Orbit, Radius } from 'lucide-react';
 import type { POI } from '../types';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface OrbitDialogParams {
   poiId: string;
@@ -35,6 +36,7 @@ interface OrbitDialogProps {
 }
 
 export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, onCreateOrbit, onDrawRadius, isEditing }: OrbitDialogProps) {
+  const { t } = useTranslation();
   
   useEffect(() => {
     if (open && pois.length > 0) {
@@ -58,21 +60,21 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Orbit Mission' : 'Create Orbit Mission'}</DialogTitle>
+          <DialogTitle>{isEditing ? t('editOrbitTitle') : t('createOrbitTitle')}</DialogTitle>
           <DialogDescription>
-            Generate a circular flight path around a point of interest.
+            {t('orbitDesc')}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="orbitPoi">Center POI</Label>
+            <Label htmlFor="orbitPoi">{t('centerPoi')}</Label>
             <Select 
               onValueChange={(value) => handleValueChange('poiId', value)} 
               value={params.poiId} 
               disabled={pois.length === 0}
             >
               <SelectTrigger id="orbitPoi">
-                <SelectValue placeholder="Select a POI" />
+                <SelectValue placeholder={t('selectPoiPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {pois.map(p => (
@@ -82,7 +84,7 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="orbitRadius">Radius (meters)</Label>
+            <Label htmlFor="orbitRadius">{t('radius')}</Label>
             <div className="flex items-center gap-2">
               <Input 
                 id="orbitRadius" 
@@ -97,7 +99,7 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="orbitPoints">Number of Waypoints</Label>
+            <Label htmlFor="orbitPoints">{t('numWaypoints')}</Label>
             <Input 
               id="orbitPoints" 
               type="number" 
@@ -109,11 +111,11 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('cancel')}
           </Button>
           <Button onClick={onCreateOrbit} disabled={!canCreate}>
             <Orbit className="w-4 h-4 mr-2" />
-            {isEditing ? 'Update Orbit' : 'Create Orbit'}
+            {isEditing ? t('updateOrbit') : t('createOrbit')}
           </Button>
         </DialogFooter>
       </DialogContent>
