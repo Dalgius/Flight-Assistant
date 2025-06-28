@@ -804,33 +804,44 @@ const handleGenerateFacadeScan = useCallback(() => {
     const missionFlightSpeed = settings.flightSpeed;
     const missionPathType = settings.pathType;
     const homeElevationMSL = settings.homeElevationMsl;
+    const now = new Date();
+    const createTimeMillis = now.getTime().toString();
+    const waylineIdInt = Math.floor(now.getTime() / 1000); 
     
     const totalDistance = calculateMissionDistance(waypoints);
     const totalDuration = calculateMissionDuration(waypoints, missionFlightSpeed);
 
-    let templateKml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo></wpml:missionConfig></Document></kml>`;
+    const templateKml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:author>FlightPlanner</wpml:author><wpml:createTime>${createTimeMillis}</wpml:createTime><wpml:updateTime>${createTimeMillis}</wpml:updateTime><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo><wpml:payloadInfo><wpml:payloadEnumValue>0</wpml:payloadEnumValue><wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo></wpml:missionConfig></Document></kml>`;
     
-    let waylinesWpml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><Folder><name>Wayline Mission</name><wpml:templateId>0</wpml:templateId><wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode><wpml:waylineId>0</wpml:waylineId><wpml:distance>${Math.round(totalDistance)}</wpml:distance><wpml:duration>${Math.round(totalDuration)}</wpml:duration><wpml:autoFlightSpeed>${missionFlightSpeed}</wpml:autoFlightSpeed>\n`;
+    let waylinesWpml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo></wpml:missionConfig><Folder><name>Wayline Mission ${waylineIdInt}</name><wpml:templateId>0</wpml:templateId><wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode><wpml:waylineId>0</wpml:waylineId><wpml:distance>${Math.round(totalDistance)}</wpml:distance><wpml:duration>${Math.round(totalDuration)}</wpml:duration><wpml:autoFlightSpeed>${missionFlightSpeed}</wpml:autoFlightSpeed>\n`;
 
     waypoints.forEach((wp, index) => {
-        waylinesWpml += `<Placemark><Point><coordinates>${wp.latlng.lng.toFixed(10)},${wp.latlng.lat.toFixed(10)}</coordinates></Point><wpml:index>${index}</wpml:index><wpml:executeHeight>${wp.altitude.toFixed(1)}</wpml:executeHeight><wpml:waypointSpeed>${missionFlightSpeed}</wpml:waypointSpeed><wpml:waypointHeadingParam>`;
+        waylinesWpml += `    <Placemark>\n`;
+        waylinesWpml += `      <Point><coordinates>${wp.latlng.lng.toFixed(10)},${wp.latlng.lat.toFixed(10)}</coordinates></Point>\n`;
+        waylinesWpml += `      <wpml:index>${index}</wpml:index>\n`;
+        waylinesWpml += `      <wpml:executeHeight>${wp.altitude.toFixed(1)}</wpml:executeHeight>\n`;
+        waylinesWpml += `      <wpml:waypointSpeed>${missionFlightSpeed}</wpml:waypointSpeed>\n`;
         
+        waylinesWpml += `      <wpml:waypointHeadingParam>\n`;
         const effectiveHeadingControl = wp.waypointType === 'grid' || wp.waypointType === 'facade' ? 'fixed' : wp.headingControl;
         
         if (effectiveHeadingControl === 'fixed') {
-            waylinesWpml += `<wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode><wpml:waypointHeadingAngle>${wp.fixedHeading}</wpml:waypointHeadingAngle>`;
+            waylinesWpml += `        <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>\n`;
+            waylinesWpml += `        <wpml:waypointHeadingAngle>${wp.fixedHeading}</wpml:waypointHeadingAngle>\n`;
         } else if (effectiveHeadingControl === 'poi_track' && wp.targetPoiId != null) {
             const targetPoi = pois.find(p => p.id === wp.targetPoiId);
             if (targetPoi) {
                 const relativePoiAltitude = targetPoi.altitude - homeElevationMSL;
-                waylinesWpml += `<wpml:waypointHeadingMode>towardPOI</wpml:waypointHeadingMode><wpml:waypointPoiPoint>${targetPoi.latlng.lng.toFixed(6)},${targetPoi.latlng.lat.toFixed(6)},${relativePoiAltitude.toFixed(1)}</wpml:waypointPoiPoint>`;
+                waylinesWpml += `        <wpml:waypointHeadingMode>towardPOI</wpml:waypointHeadingMode>\n`;
+                waylinesWpml += `        <wpml:waypointPoiPoint>${targetPoi.latlng.lng.toFixed(6)},${targetPoi.latlng.lat.toFixed(6)},${relativePoiAltitude.toFixed(1)}</wpml:waypointPoiPoint>\n`;
             } else {
-                waylinesWpml += `<wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>`;
+                waylinesWpml += `        <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>\n`;
             }
         } else {
-            waylinesWpml += `<wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>`;
+            waylinesWpml += `        <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>\n`;
         }
-        waylinesWpml += `</wpml:waypointHeadingParam><wpml:waypointTurnParam>`;
+        waylinesWpml += `        <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>\n`;
+        waylinesWpml += `      </wpml:waypointHeadingParam>\n`;
         
         let turnMode;
         if (wp.hoverTime > 0) {
@@ -840,10 +851,14 @@ const handleGenerateFacadeScan = useCallback(() => {
         } else {
             turnMode = (index === 0 || index === waypoints.length - 1) ? 'toPointAndStopWithContinuityCurvature' : 'toPointAndPassWithContinuityCurvature';
         }
-        waylinesWpml += `<wpml:waypointTurnMode>${turnMode}</wpml:waypointTurnMode></wpml:waypointTurnParam>`;
         
+        waylinesWpml += `      <wpml:waypointTurnParam>\n`;
+        waylinesWpml += `        <wpml:waypointTurnMode>${turnMode}</wpml:waypointTurnMode>\n`;
+        waylinesWpml += `        <wpml:waypointTurnDampingDist>0.2</wpml:waypointTurnDampingDist>\n`;
+        waylinesWpml += `      </wpml:waypointTurnParam>\n`;
+
         const useStraightLine = (turnMode === 'toPointAndStopWithDiscontinuityCurvature');
-        waylinesWpml += `<wpml:useStraightLine>${useStraightLine ? 1 : 0}</wpml:useStraightLine>`;
+        waylinesWpml += `      <wpml:useStraightLine>${useStraightLine ? 1 : 0}</wpml:useStraightLine>\n`;
 
         let actionsXml = "";
         if (wp.hoverTime > 0) {
@@ -851,7 +866,7 @@ const handleGenerateFacadeScan = useCallback(() => {
         }
         if (wp.headingControl !== 'poi_track') {
              const clampedPitch = Math.max(-90, Math.min(60, wp.gimbalPitch));
-             actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable><wpml:gimbalPitchRotateAngle>${clampedPitch}</wpml:gimbalPitchRotateAngle><wpml:gimbalRotateTimeEnable>1</wpml:gimbalRotateTimeEnable><wpml:gimbalRotateTime>1</wpml:gimbalRotateTime></wpml:actionActuatorFuncParam></wpml:action>`;
+             actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable><wpml:gimbalPitchRotateAngle>${clampedPitch}</wpml:gimbalPitchRotateAngle><wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable><wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable><wpml:gimbalRotateTimeEnable>1</wpml:gimbalRotateTimeEnable><wpml:gimbalRotateTime>1</wpml:gimbalRotateTime><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
         }
         if (wp.cameraAction && wp.cameraAction !== 'none') {
             actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>${wp.cameraAction}</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
@@ -859,14 +874,14 @@ const handleGenerateFacadeScan = useCallback(() => {
         if (actionsXml) {
             waylinesWpml += `<wpml:actionGroup><wpml:actionGroupId>${actionGroupCounter++}</wpml:actionGroupId><wpml:actionGroupStartIndex>${index}</wpml:actionGroupStartIndex><wpml:actionGroupEndIndex>${index}</wpml:actionGroupEndIndex><wpml:actionGroupMode>sequence</wpml:actionGroupMode><wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger>${actionsXml}</wpml:actionGroup>`;
         }
-        waylinesWpml += `</Placemark>\n`;
+        waylinesWpml += `    </Placemark>\n`;
     });
-    waylinesWpml += `</Folder></Document></kml>`;
+    waylinesWpml += `  </Folder>\n</Document>\n</kml>`;
 
     const zip = new JSZip();
     zip.folder("wpmz")?.file("template.kml", templateKml).file("waylines.wpml", waylinesWpml);
     zip.generateAsync({ type: "blob", mimeType: "application/vnd.google-earth.kmz" })
-        .then(blob => downloadFile(`flight_plan.kmz`, blob, 'application/vnd.google-earth.kmz'))
+        .then(blob => downloadFile(`flight_plan_dji_${waylineIdInt}.kmz`, blob, 'application/vnd.google-earth.kmz'))
         .catch(err => toast({ variant: 'destructive', title: 'KMZ Generation Error', description: err.message }));
     toast({ title: 'Exported DJI KMZ' });
   };
