@@ -28,7 +28,7 @@ function FlightPlannerUI() {
   const [missions, setMissions] = useState<SurveyMission[]>([]);
   const [settings, setSettings] = useState<FlightPlanSettings>({
     defaultAltitude: 50,
-    flightSpeed: 8.5,
+    flightSpeed: 2.5,
     pathType: 'curved',
     homeElevationMsl: 0,
     altitudeAdaptationMode: 'relative',
