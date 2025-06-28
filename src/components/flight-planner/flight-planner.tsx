@@ -5,7 +5,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
 import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData, SurveyMission } from '@/components/flight-planner/types';
-import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints } from '@/lib/flight-plan-calcs';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints, getElevationsBatch } from '@/lib/flight-plan-calcs';
 
 import { ActionBar } from '@/components/flight-planner/action-bar';
 import { SidePanel } from '@/components/flight-planner/side-panel';
@@ -27,6 +27,9 @@ export default function FlightPlanner() {
     flightSpeed: 8.5,
     pathType: 'curved',
     homeElevationMsl: 0,
+    altitudeAdaptationMode: 'relative',
+    desiredAGL: 50,
+    desiredAMSL: 100,
   });
   
   const [selectedWaypointId, setSelectedWaypointId] = useState<number | null>(null);
@@ -38,6 +41,9 @@ export default function FlightPlanner() {
 
   const [editingMissionId, setEditingMissionId] = useState<number | null>(null);
 
+  // State for POI panel inputs
+  const [poiName, setPoiName] = useState('');
+  const [poiHeight, setPoiHeight] = useState(10);
 
   // Lifted state for dialogs
   const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
@@ -78,7 +84,33 @@ export default function FlightPlanner() {
     setSettings(prev => ({ ...prev, ...newSettings }));
   }, []);
 
-  const addWaypoint = useCallback((latlng: LatLng, options: Partial<Waypoint> = {}) => {
+  useEffect(() => {
+    const suggestedAMSL = settings.homeElevationMsl + settings.defaultAltitude;
+    if (Math.round(suggestedAMSL) !== settings.desiredAMSL) {
+      updateSettings({ desiredAMSL: Math.round(suggestedAMSL) });
+    }
+  }, [settings.homeElevationMsl, settings.defaultAltitude, settings.desiredAMSL, updateSettings]);
+
+  const addWaypoint = useCallback(async (latlng: LatLng, options: Partial<Waypoint> = {}) => {
+    const isFirstWaypoint = waypoints.length === 0;
+    let terrainElevation: number | null = null;
+    
+    if (isFirstWaypoint) {
+      toast({ title: "Fetching Elevation...", description: "Getting ground elevation for takeoff point." });
+      const elevations = await getElevationsBatch([latlng]);
+      if (elevations && elevations.length > 0 && elevations[0] !== null) {
+        terrainElevation = Math.round(elevations[0]);
+        setSettings(prev => ({
+          ...prev,
+          homeElevationMsl: terrainElevation!,
+          altitudeAdaptationMode: 'relative'
+        }));
+        toast({ title: "Success", description: `Takeoff elevation set to ${terrainElevation}m based on Waypoint 1.` });
+      } else {
+        toast({ variant: "destructive", title: "Warning", description: "Could not fetch takeoff elevation." });
+      }
+    }
+
     const newWaypoint: Waypoint = {
         id: waypointCounter,
         latlng: latlng,
@@ -89,17 +121,34 @@ export default function FlightPlanner() {
         fixedHeading: options.fixedHeading || 0,
         cameraAction: options.cameraAction || 'none',
         targetPoiId: options.targetPoiId || null,
-        terrainElevationMSL: options.terrainElevationMSL ?? null,
+        terrainElevationMSL: options.terrainElevationMSL ?? terrainElevation,
         waypointType: options.waypointType || 'generic' 
     };
     setWaypoints(prev => [...prev, newWaypoint]);
     setWaypointCounter(prev => prev + 1);
     selectWaypoint(newWaypoint.id);
-  }, [settings, waypointCounter]);
+  }, [settings, waypointCounter, waypoints.length, toast]);
 
-  const updateWaypoint = useCallback((id: number, updates: Partial<Waypoint>) => {
+  const updateWaypoint = useCallback(async (id: number, updates: Partial<Waypoint>) => {
+    let homeElevationUpdate: Partial<FlightPlanSettings> | null = null;
+    
+    const isFirstWaypoint = waypoints.length > 0 && waypoints[0].id === id;
+
+    if (isFirstWaypoint && updates.latlng) {
+      const elevations = await getElevationsBatch([updates.latlng]);
+      if (elevations && elevations.length > 0 && elevations[0] !== null) {
+        const homeElev = Math.round(elevations[0]);
+        homeElevationUpdate = { homeElevationMsl: homeElev, altitudeAdaptationMode: 'relative' };
+        updates.terrainElevationMSL = homeElev;
+      }
+    }
+
     setWaypoints(prev => prev.map(wp => wp.id === id ? { ...wp, ...updates } : wp));
-  }, []);
+    
+    if (homeElevationUpdate) {
+        setSettings(prev => ({...prev, ...homeElevationUpdate}));
+    }
+  }, [waypoints]);
 
   const deleteWaypoint = useCallback((id: number) => {
     setWaypoints(prev => prev.filter(wp => wp.id !== id));
@@ -171,23 +220,34 @@ export default function FlightPlanner() {
     toast({ title: "Mission Cleared", description: "All waypoints and POIs have been removed." });
   }, [toast]);
 
-  const addPoi = useCallback((latlng: LatLng, name: string, objectHeight: number) => {
+  const addPoi = useCallback(async (latlng: LatLng, name: string, objectHeight: number) => {
     const newPoi: POI = {
         id: poiCounter,
         name: name || `POI ${poiCounter}`,
         latlng,
         objectHeightAboveGround: objectHeight,
-        terrainElevationMSL: null, // To be fetched
-        altitude: objectHeight, // Initial, will be updated
+        terrainElevationMSL: null,
+        altitude: objectHeight,
     };
+    
+    const elevations = await getElevationsBatch([latlng]);
+    if (elevations && elevations.length > 0 && elevations[0] !== null) {
+      newPoi.terrainElevationMSL = elevations[0];
+      newPoi.altitude = newPoi.terrainElevationMSL + newPoi.objectHeightAboveGround;
+    } else {
+      toast({ variant: "destructive", title: "Warning", description: `Could not fetch terrain elevation for ${newPoi.name}.` });
+    }
+
     setPois(prev => [...prev, newPoi]);
     setPoiCounter(prev => prev + 1);
-    // In a real scenario, we'd fetch terrain elevation here.
-  }, [poiCounter]);
+  }, [poiCounter, toast]);
   
+  const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
+    setPois(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  }, []);
+
   const deletePoi = useCallback((id: number) => {
     setPois(prev => prev.filter(p => p.id !== id));
-    // Also nullify any waypoint targeting this POI
     setWaypoints(prev => prev.map(wp => wp.targetPoiId === id ? {...wp, targetPoiId: null} : wp));
   }, []);
 
@@ -523,6 +583,87 @@ const handleGenerateFacadeScan = useCallback(() => {
     });
   }, [toast]);
 
+  // --- Terrain Functions ---
+  const getHomeElevationFromFirstWaypoint = useCallback(async () => {
+    if (waypoints.length === 0) {
+      toast({ title: "Info", description: "Add at least one waypoint to fetch its elevation." });
+      return;
+    }
+    const firstWp = waypoints[0];
+    toast({ title: "Fetching Elevation...", description: `Getting elevation for Waypoint 1.` });
+    const elevations = await getElevationsBatch([firstWp.latlng]);
+    if (elevations && elevations.length > 0 && elevations[0] !== null) {
+      const homeElev = Math.round(elevations[0]);
+      setSettings(prev => ({
+        ...prev,
+        homeElevationMsl: homeElev,
+        altitudeAdaptationMode: 'relative'
+      }));
+      setWaypoints(prev => prev.map(wp => wp.id === firstWp.id ? { ...wp, terrainElevationMSL: homeElev } : wp));
+      toast({ title: "Success", description: `Takeoff elevation set to ${homeElev}m based on Waypoint 1.` });
+    } else {
+      toast({ variant: "destructive", title: "Error", description: "Failed to fetch elevation for Waypoint 1." });
+    }
+  }, [waypoints, toast]);
+
+  const adaptToAGL = useCallback(async () => {
+    if (waypoints.length === 0) {
+      toast({ title: "Info", description: "No waypoints to adapt." });
+      return;
+    }
+    toast({ title: "Processing...", description: "Fetching terrain data for all waypoints." });
+    const locations = waypoints.map(wp => wp.latlng);
+    const elevations = await getElevationsBatch(locations);
+
+    let successCount = 0;
+    const newWaypoints = waypoints.map((wp, index) => {
+      const groundElevation = elevations[index];
+      if (groundElevation !== null) {
+        successCount++;
+        const targetMSL = groundElevation + settings.desiredAGL;
+        const newRelativeAltitude = targetMSL - settings.homeElevationMsl;
+        return {
+          ...wp,
+          altitude: Math.round(newRelativeAltitude),
+          terrainElevationMSL: groundElevation,
+        };
+      }
+      return { ...wp, terrainElevationMSL: null };
+    });
+
+    setWaypoints(newWaypoints);
+    setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'agl' }));
+    if (successCount === waypoints.length && waypoints.length > 0) {
+        toast({ title: "Success", description: "All waypoint altitudes have been adapted to a constant AGL." });
+    } else if (successCount > 0) {
+        toast({ title: "Partial Success", description: `Adapted ${successCount}/${waypoints.length} waypoints. Some terrain fetches failed.` });
+    } else {
+        toast({ variant: "destructive", title: "Error", description: `Failed to adapt any waypoints.` });
+    }
+  }, [waypoints, settings.desiredAGL, settings.homeElevationMsl, toast]);
+
+  const adaptToAMSL = useCallback(async () => {
+    if (waypoints.length === 0) {
+      toast({ title: "Info", description: "No waypoints to adapt." });
+      return;
+    }
+    toast({ title: "Processing...", description: "Fetching terrain data for all waypoints." });
+    const locations = waypoints.map(wp => wp.latlng);
+    const elevations = await getElevationsBatch(locations);
+    const newWaypoints = waypoints.map((wp, index) => {
+        const newRelativeAltitude = settings.desiredAMSL - settings.homeElevationMsl;
+        return {
+            ...wp,
+            altitude: Math.round(newRelativeAltitude),
+            terrainElevationMSL: elevations[index]
+        };
+    });
+
+    setWaypoints(newWaypoints);
+    setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'amsl' }));
+    toast({ title: "Success", description: `All waypoint altitudes set to ${settings.desiredAMSL}m AMSL.` });
+  }, [waypoints, settings.desiredAMSL, settings.homeElevationMsl, toast]);
+
 
   const flightStats: FlightStatistics = useMemo(() => {
     let totalDistance = 0;
@@ -545,8 +686,8 @@ const handleGenerateFacadeScan = useCallback(() => {
   const handleMapClick = (latlng: LatLng, event: any) => {
     if (drawingState.mode) return;
     if (event.originalEvent.ctrlKey) {
-        addPoi(latlng, `POI ${poiCounter}`, 10);
-        toast({ title: "POI Added", description: `POI ${poiCounter} created at clicked location.` });
+        addPoi(latlng, poiName, poiHeight);
+        toast({ title: "POI Added", description: `${poiName || 'POI ' + poiCounter} created at clicked location.` });
     } else {
         addWaypoint(latlng);
         toast({ title: "Waypoint Added", description: `Waypoint ${waypointCounter} created at clicked location.` });
@@ -565,10 +706,12 @@ const handleGenerateFacadeScan = useCallback(() => {
     addWaypoint, updateWaypoint, deleteWaypoint, selectWaypoint,
     toggleMultiSelectWaypoint, clearMultiSelection, selectAllWaypoints,
     clearWaypoints, deleteMultiSelectedWaypoints,
-    pois, addPoi, deletePoi,
+    pois, addPoi, deletePoi, updatePoi,
+    poiName, setPoiName, poiHeight, setPoiHeight,
     missions, deleteMission, editMission: handleEditMission,
     flightStats,
     onOpenDialog: handleOpenDialog,
+    getHomeElevationFromFirstWaypoint, adaptToAGL, adaptToAMSL
   };
 
   return (
@@ -585,6 +728,7 @@ const handleGenerateFacadeScan = useCallback(() => {
             waypoints={waypoints}
             pois={pois}
             pathType={settings.pathType}
+            altitudeAdaptationMode={settings.altitudeAdaptationMode}
             selectedWaypointId={selectedWaypointId}
             multiSelectedWaypointIds={multiSelectedWaypointIds}
             drawingState={drawingState}
