@@ -1,3 +1,4 @@
+
 export type PanelType = 'settings' | 'waypoints' | 'pois' | 'missions' | 'terrain' | 'file' | 'stats';
 
 export type DialogType = 'orbit' | 'survey' | 'facade' | null;
@@ -52,4 +53,10 @@ export interface FlightStatistics {
     flightTime: number; // in seconds
     waypointCount: number;
     poiCount: number;
+}
+
+export interface DrawingState {
+  mode: 'orbitRadius' | null;
+  center?: LatLng;
+  onComplete: (value: any) => void;
 }
