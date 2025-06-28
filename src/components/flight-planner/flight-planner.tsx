@@ -4,8 +4,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
-import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState } from '@/components/flight-planner/types';
-import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH } from '@/lib/flight-plan-calcs';
+import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams } from '@/components/flight-planner/types';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing } from '@/lib/flight-plan-calcs';
 
 import { ActionBar } from '@/components/flight-planner/action-bar';
 import { SidePanel } from '@/components/flight-planner/side-panel';
@@ -35,6 +35,13 @@ export default function FlightPlanner() {
   const [poiCounter, setPoiCounter] = useState(1);
 
   const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
+  const [surveyParams, setSurveyParams] = useState<SurveyGridParams>({
+    altitude: 50,
+    sidelap: 70,
+    frontlap: 80,
+    angle: 0,
+    polygon: [],
+  });
   const [drawingState, setDrawingState] = useState<DrawingState>({ mode: null, onComplete: () => {} });
   
   const MapView = useMemo(() => dynamic(() => import('@/components/flight-planner/map-view').then(mod => mod.MapView), { 
@@ -216,6 +223,40 @@ export default function FlightPlanner() {
 
   }, [pois, settings, waypointCounter, toast, orbitParams]);
 
+  const handleCreateSurveyGrid = useCallback(() => {
+    const { polygon, altitude, sidelap, frontlap, angle } = surveyParams;
+    if (!polygon || polygon.length < 3) {
+        toast({ variant: "destructive", title: "Invalid Area", description: "A survey area with at least 3 points is required." });
+        return;
+    }
+
+    const waypointsData = generateSurveyGridWaypoints(polygon, { altitude, sidelap, frontlap, angle });
+
+    if (waypointsData.length === 0) {
+        toast({ variant: "destructive", title: "No Waypoints", description: "Could not generate any waypoints for the given area and parameters." });
+        return;
+    }
+
+    let currentWpCounter = waypointCounter;
+    const newWaypoints: Waypoint[] = waypointsData.map(wpData => {
+        const newWp: Waypoint = {
+            id: currentWpCounter++,
+            latlng: wpData.latlng,
+            ...wpData.options,
+            hoverTime: 0,
+            targetPoiId: null,
+            terrainElevationMSL: null,
+        };
+        return newWp;
+    });
+
+    setWaypoints(prev => [...prev, ...newWaypoints]);
+    setWaypointCounter(currentWpCounter);
+    setActiveDialog(null);
+    toast({ title: "Survey Grid Created", description: `${waypointsData.length} waypoints generated.` });
+
+}, [surveyParams, toast, waypointCounter]);
+
   const handleDrawRadiusRequest = useCallback(() => {
     const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
     if (!centerPoi) return;
@@ -238,6 +279,46 @@ export default function FlightPlanner() {
     });
   }, [pois, orbitParams.poiId, toast]);
 
+  const handleDrawSurveyAreaRequest = useCallback(() => {
+    setActiveDialog(null);
+    setDrawingState({
+      mode: 'surveyArea',
+      onComplete: (polygon: LatLng[]) => {
+        setSurveyParams(prev => ({...prev, polygon}));
+        setDrawingState({ mode: null, onComplete: () => {} });
+        setActiveDialog('survey');
+        toast({
+          title: "Survey Area Defined",
+          description: `${polygon.length} points selected.`,
+        });
+      },
+    });
+    toast({
+      title: "Drawing Survey Area",
+      description: "Click on the map to define corners. Click the first point again to close the polygon.",
+    });
+  }, [toast]);
+  
+  const handleDrawGridAngleRequest = useCallback(() => {
+    setActiveDialog(null);
+    setDrawingState({
+      mode: 'surveyAngle',
+      onComplete: (angle: number) => {
+        const roundedAngle = Math.round(angle);
+        setSurveyParams(prev => ({ ...prev, angle: roundedAngle }));
+        setDrawingState({ mode: null, onComplete: () => {} });
+        setActiveDialog('survey');
+        toast({
+          title: "Grid Angle Set",
+          description: `Angle set to ${roundedAngle}°`,
+        });
+      }
+    });
+    toast({
+      title: "Draw Grid Angle",
+      description: "Click and drag on the map to define the angle of the flight lines.",
+    });
+  }, [toast]);
 
   const flightStats: FlightStatistics = useMemo(() => {
     let totalDistance = 0;
@@ -320,6 +401,11 @@ export default function FlightPlanner() {
       <SurveyGridDialog
         open={activeDialog === 'survey'}
         onOpenChange={(isOpen) => !isOpen && setActiveDialog(null)}
+        params={surveyParams}
+        onParamsChange={setSurveyParams}
+        onDrawArea={handleDrawSurveyAreaRequest}
+        onDrawAngle={handleDrawGridAngleRequest}
+        onCreateGrid={handleCreateSurveyGrid}
       />
       <FacadeScanDialog
         open={activeDialog === 'facade'}
