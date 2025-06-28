@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import 'leaflet-geometryutil';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, ScaleControl, Polyline, Marker, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, ScaleControl, Polyline, Marker, useMap, useMapEvents, Popup } from 'react-leaflet';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
@@ -256,8 +256,8 @@ const createWaypointIcon = (waypoint: Waypoint, displayIndex: number, isSelected
     });
 };
 
-const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, isSelected, isMultiSelected, onClick, onDragEnd }: any) => {
-    const markerRef = useRef(null);
+const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isSelected, isMultiSelected, onClick, onDragEnd }: any) => {
+    const markerRef = useRef<L.Marker>(null);
     const isHome = waypoints[0]?.id === waypoint.id;
 
     const icon = useMemo(() => createWaypointIcon(waypoint, displayIndex, isSelected, isMultiSelected, isHome, waypoints, pois), 
@@ -275,10 +275,22 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, isSelected, i
             },
             click() {
                 onClick(waypoint.id);
-            }
+            },
+            mouseover: (e: L.LeafletMouseEvent) => {
+                e.target.openPopup();
+            },
+            mouseout: (e: L.LeafletMouseEvent) => {
+                e.target.closePopup();
+            },
         }),
         [waypoint.id, onDragEnd, onClick]
     );
+
+    const homeElevation = settings?.homeElevationMsl ?? 0;
+    const altitudeRelToHome = waypoint.altitude;
+    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(1)} m`;
+    const aglText = waypoint.terrainElevationMSL !== null ? `${((homeElevation + altitudeRelToHome) - waypoint.terrainElevationMSL).toFixed(1)}m` : "N/A";
+    const terrainElevText = waypoint.terrainElevationMSL !== null ? `${waypoint.terrainElevationMSL.toFixed(1)}m` : "N/A";
 
     return (
         <Marker
@@ -288,7 +300,19 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, isSelected, i
             draggable={true}
             eventHandlers={eventHandlers}
             zIndexOffset={zIndexOffset}
-        />
+        >
+            <Popup autoPan={false}>
+                <div className="text-xs leading-snug">
+                    <strong className="text-sm">Waypoint {displayIndex}</strong><br />
+                    Lat: {waypoint.latlng.lat.toFixed(5)}, Lng: {waypoint.latlng.lng.toFixed(5)}<br />
+                    Flight Alt (Rel): {altitudeRelToHome} m<br />
+                    AMSL Alt: {amslText}<br />
+                    AGL Alt: {aglText}<br />
+                    Terrain Elev: {terrainElevText}<br />
+                    Gimbal: {waypoint.gimbalPitch}° | Hover: {waypoint.hoverTime}s
+                </div>
+            </Popup>
+        </Marker>
     );
 };
 
@@ -318,6 +342,7 @@ interface MapViewProps {
   pois: POI[];
   pathType: 'straight' | 'curved';
   altitudeAdaptationMode: FlightPlanSettings['altitudeAdaptationMode'];
+  settings: FlightPlanSettings;
   selectedWaypointId: number | null;
   multiSelectedWaypointIds: Set<number>;
   drawingState: DrawingState;
@@ -341,7 +366,7 @@ const defaultLayer = {
 };
 
 export function MapView(props: MapViewProps) {
-  const { isPanelOpen, waypoints, pois, pathType, altitudeAdaptationMode, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
+  const { isPanelOpen, waypoints, pois, pathType, altitudeAdaptationMode, settings, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
   const [isSatelliteView, setIsSatelliteView] = useState(false);
   const mapRef = useRef<L.Map>(null);
 
@@ -402,6 +427,7 @@ export function MapView(props: MapViewProps) {
                     displayIndex={index + 1}
                     waypoints={waypoints}
                     pois={pois}
+                    settings={settings}
                     isSelected={selectedWaypointId === wp.id}
                     isMultiSelected={multiSelectedWaypointIds.has(wp.id)}
                     onClick={onMarkerClick}
@@ -434,5 +460,3 @@ export function MapView(props: MapViewProps) {
     </div>
   );
 }
-
-  
