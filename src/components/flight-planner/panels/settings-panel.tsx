@@ -20,7 +20,7 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>{t('flightSettingsTitle')}</CardTitle>
+          <CardTitle>{t('generalSettingsTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
