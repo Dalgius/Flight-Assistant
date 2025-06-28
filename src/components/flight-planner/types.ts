@@ -1,4 +1,5 @@
 
+
 export type PanelType = 'settings' | 'waypoints' | 'pois' | 'missions' | 'terrain' | 'file' | 'stats';
 
 export type DialogType = 'orbit' | 'survey' | 'facade' | null;
@@ -55,8 +56,16 @@ export interface FlightStatistics {
     poiCount: number;
 }
 
+export interface SurveyGridParams {
+  altitude: number;
+  sidelap: number;
+  frontlap: number;
+  angle: number;
+  polygon: LatLng[];
+}
+
 export interface DrawingState {
-  mode: 'orbitRadius' | null;
+  mode: 'orbitRadius' | 'surveyArea' | 'surveyAngle' | null;
   center?: LatLng;
   onComplete: (value: any) => void;
 }
