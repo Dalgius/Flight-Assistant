@@ -729,6 +729,7 @@ const handleGenerateFacadeScan = useCallback(() => {
             pois={pois}
             pathType={settings.pathType}
             altitudeAdaptationMode={settings.altitudeAdaptationMode}
+            settings={settings}
             selectedWaypointId={selectedWaypointId}
             multiSelectedWaypointIds={multiSelectedWaypointIds}
             drawingState={drawingState}
