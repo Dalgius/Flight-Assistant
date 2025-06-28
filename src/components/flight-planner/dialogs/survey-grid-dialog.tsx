@@ -34,10 +34,8 @@ export function SurveyGridDialog({
   onDrawAngle,
   onCreateGrid,
 }: SurveyGridDialogProps) {
-  const handleValueChange = (
-    field: keyof SurveyGridParams,
-    value: string | number
-  ) => {
+  
+  const handleNumberValueChange = (field: keyof Omit<SurveyGridParams, 'polygon'>, value: string) => {
     onParamsChange({ ...params, [field]: Number(value) });
   };
 
@@ -62,7 +60,7 @@ export function SurveyGridDialog({
                 id="surveyAltitude"
                 type="number"
                 value={params.altitude}
-                onChange={(e) => handleValueChange('altitude', e.target.value)}
+                onChange={(e) => handleNumberValueChange('altitude', e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -71,7 +69,7 @@ export function SurveyGridDialog({
                 id="gridAngle"
                 type="number"
                 value={params.angle}
-                onChange={(e) => handleValueChange('angle', e.target.value)}
+                onChange={(e) => handleNumberValueChange('angle', e.target.value)}
               />
               <Button variant="outline" size="sm" className="w-full mt-1" onClick={onDrawAngle}>
                 <DraftingCompass className="w-4 h-4 mr-2" />
@@ -86,7 +84,7 @@ export function SurveyGridDialog({
                 id="sidelap"
                 type="number"
                 value={params.sidelap}
-                onChange={(e) => handleValueChange('sidelap', e.target.value)}
+                onChange={(e) => handleNumberValueChange('sidelap', e.target.value)}
               />
             </div>
             <div className="space-y-2">
@@ -95,7 +93,7 @@ export function SurveyGridDialog({
                 id="frontlap"
                 type="number"
                 value={params.frontlap}
-                onChange={(e) => handleValueChange('frontlap', e.target.value)}
+                onChange={(e) => handleNumberValueChange('frontlap', e.target.value)}
               />
             </div>
           </div>
