@@ -12,6 +12,8 @@ export const translations: Translations = {
         "successTitle": "Success",
         "editMission": "Edit",
         "deleteMission": "Delete",
+        "generalSettingsTitle": "General Settings",
+        "waypointSettingsTitle": "Waypoint Settings",
 
         // Panel Titles
         "flightSettingsTitle": "Flight Settings",
@@ -36,7 +38,6 @@ export const translations: Translations = {
         "selectAll": "Select All",
         "clearAll": "Clear All",
         "clickMapToAddWaypoints": "Click on map to add waypoints.",
-        "editWaypointTitle": "Edit Waypoint",
         "altitudeLabel": "Altitude",
         "gimbalPitchLabel": "Gimbal Pitch",
         "hoverTimeLabel": "Hover Time",
@@ -244,6 +245,8 @@ export const translations: Translations = {
         "successTitle": "Successo",
         "editMission": "Modifica",
         "deleteMission": "Elimina",
+        "generalSettingsTitle": "Impostazioni Generali",
+        "waypointSettingsTitle": "Impostazioni Waypoint",
 
         // Panel Titles
         "flightSettingsTitle": "Impostazioni di Volo",
@@ -268,7 +271,6 @@ export const translations: Translations = {
         "selectAll": "Seleziona Tutti",
         "clearAll": "Pulisci Tutto",
         "clickMapToAddWaypoints": "Clicca sulla mappa per aggiungere waypoint.",
-        "editWaypointTitle": "Modifica Waypoint",
         "altitudeLabel": "Altitudine",
         "gimbalPitchLabel": "Pitch Gimbal",
         "hoverTimeLabel": "Tempo di Stazionamento",
