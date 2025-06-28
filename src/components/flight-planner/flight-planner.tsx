@@ -14,8 +14,11 @@ import { OrbitDialog } from '@/components/flight-planner/dialogs/orbit-dialog';
 import { SurveyGridDialog } from '@/components/flight-planner/dialogs/survey-grid-dialog';
 import { FacadeScanDialog } from '@/components/flight-planner/dialogs/facade-scan-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TranslationProvider, useTranslation } from '@/hooks/use-translation';
 
-export default function FlightPlanner() {
+
+function FlightPlannerUI() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [activePanel, setActivePanel] = useState<PanelType | null>('waypoints');
   const [activeDialog, setActiveDialog] = useState<DialogType>(null);
@@ -95,7 +98,7 @@ export default function FlightPlanner() {
     let terrainElevation: number | null = null;
     
     if (isFirstWaypoint && !options.isFromImport) {
-      toast({ title: "Fetching Elevation...", description: "Getting ground elevation for takeoff point." });
+      toast({ title: t('fetchingElevation'), description: t('gettingTakeoffElevation') });
       const elevations = await getElevationsBatch([latlng]);
       if (elevations && elevations.length > 0 && elevations[0] !== null) {
         terrainElevation = Math.round(elevations[0]);
@@ -104,9 +107,9 @@ export default function FlightPlanner() {
           homeElevationMsl: terrainElevation!,
           altitudeAdaptationMode: 'relative'
         }));
-        toast({ title: "Success", description: `Takeoff elevation set to ${terrainElevation}m based on Waypoint 1.` });
+        toast({ title: t('successTitle'), description: t('takeoffElevationSuccess', { elev: terrainElevation }) });
       } else {
-        toast({ variant: "destructive", title: "Warning", description: "Could not fetch takeoff elevation." });
+        toast({ variant: "destructive", title: t('warning'), description: t('takeoffElevationFailure') });
       }
     }
 
@@ -128,7 +131,7 @@ export default function FlightPlanner() {
       setWaypointCounter(prev => prev + 1);
       selectWaypoint(newWaypoint.id);
     }
-  }, [settings, waypointCounter, waypoints.length, toast]);
+  }, [settings, waypointCounter, waypoints.length, toast, t]);
 
   const updateWaypoint = useCallback(async (id: number, updates: Partial<Waypoint>) => {
     let homeElevationUpdate: Partial<FlightPlanSettings> | null = null;
@@ -149,7 +152,7 @@ export default function FlightPlanner() {
     if (homeElevationUpdate) {
         setSettings(prev => ({...prev, ...homeElevationUpdate}));
     }
-  }, [waypoints]);
+  }, [waypoints, t]);
 
   const deleteWaypoint = useCallback((id: number) => {
     setWaypoints(prev => prev.filter(wp => wp.id !== id));
@@ -171,10 +174,10 @@ export default function FlightPlanner() {
     setMultiSelectedWaypointIds(new Set());
     
     toast({
-      title: "Waypoints Deleted",
-      description: `${count} waypoint${count > 1 ? 's have' : ' has'} been removed.`
+      title: t('waypointsDeleted'),
+      description: t('waypointsRemoved', { count })
     });
-  }, [multiSelectedWaypointIds, toast]);
+  }, [multiSelectedWaypointIds, toast, t]);
 
   const selectWaypoint = useCallback((id: number | null) => {
     if (multiSelectedWaypointIds.size > 0) {
@@ -218,8 +221,8 @@ export default function FlightPlanner() {
     setWaypointCounter(1);
     setPoiCounter(1);
     setMissionCounter(1);
-    toast({ title: "Mission Cleared", description: "All waypoints and POIs have been removed." });
-  }, [toast]);
+    toast({ title: t('missionCleared'), description: t('allCleared') });
+  }, [toast, t]);
 
   const addPoi = useCallback(async (latlng: LatLng, name: string, objectHeight: number, options: Partial<POI> & { isFromImport?: boolean } = {}) => {
     const newPoi: POI = {
@@ -237,7 +240,7 @@ export default function FlightPlanner() {
         newPoi.terrainElevationMSL = elevations[0];
         newPoi.altitude = newPoi.terrainElevationMSL + newPoi.objectHeightAboveGround;
       } else {
-        toast({ variant: "destructive", title: "Warning", description: `Could not fetch terrain elevation for ${newPoi.name}.` });
+        toast({ variant: "destructive", title: t('warning'), description: t('poiElevationFailure', { name: newPoi.name }) });
       }
     }
 
@@ -245,7 +248,7 @@ export default function FlightPlanner() {
     if (!options.isFromImport) {
         setPoiCounter(prev => prev + 1);
     }
-  }, [poiCounter, toast]);
+  }, [poiCounter, toast, t]);
   
   const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
     setPois(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
@@ -265,10 +268,10 @@ export default function FlightPlanner() {
     setMissions(prev => prev.filter(m => m.id !== missionId));
 
     toast({
-        title: "Mission Deleted",
-        description: `Mission "${missionToDelete.name}" and its ${missionToDelete.waypointIds.length} waypoints have been removed.`
+        title: t('missionDeleted'),
+        description: t('missionDeletedToast', {name: missionToDelete.name, count: missionToDelete.waypointIds.length})
     });
-  }, [missions, toast]);
+  }, [missions, toast, t]);
 
   const handleEditMission = useCallback((missionId: number) => {
     const mission = missions.find(m => m.id === missionId);
@@ -300,7 +303,7 @@ export default function FlightPlanner() {
     const { poiId, radius, numPoints } = orbitParams;
     const centerPoi = pois.find(p => p.id === parseInt(poiId));
     if (!centerPoi) {
-      toast({ variant: "destructive", title: "Error", description: "Selected POI not found." });
+      toast({ variant: "destructive", title: t('error'), description: t('poiNotFound') });
       return;
     }
 
@@ -357,7 +360,7 @@ export default function FlightPlanner() {
 
         setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
         setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
-        toast({ title: "Orbit Updated", description: `${newWaypoints.length} waypoints updated for ${centerPoi.name}.` });
+        toast({ title: t('orbitUpdated'), description: t('orbitUpdatedSuccess', { numPoints: newWaypoints.length, poiName: centerPoi.name }) });
     } else {
         const newMission: SurveyMission = {
             id: missionCounter,
@@ -369,26 +372,26 @@ export default function FlightPlanner() {
         setMissions(prev => [...prev, newMission]);
         setMissionCounter(prev => prev + 1);
         setWaypoints(prev => [...prev, ...newWaypoints]);
-        toast({ title: "Orbit Created", description: `${numPoints} waypoints generated around ${centerPoi.name}.` });
+        toast({ title: t('orbitCreated'), description: t('orbitCreatedSuccess', { numPoints, poiName: centerPoi.name }) });
     }
 
     setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
     setEditingMissionId(null);
 
-  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter, editingMissionId, missions]);
+  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter, editingMissionId, missions, t]);
 
   const handleCreateSurveyGrid = useCallback(() => {
     const { polygon, altitude, sidelap, frontlap, angle } = surveyParams;
     if (!polygon || polygon.length < 3) {
-        toast({ variant: "destructive", title: "Invalid Area", description: "A survey area with at least 3 points is required." });
+        toast({ variant: "destructive", title: t('invalidArea'), description: t('invalidAreaDesc') });
         return;
     }
 
     const waypointsData = generateSurveyGridWaypoints(polygon, { altitude, sidelap, frontlap, angle });
 
     if (waypointsData.length === 0) {
-        toast({ variant: "destructive", title: "No Waypoints", description: "Could not generate any waypoints for the given area and parameters." });
+        toast({ variant: "destructive", title: t('noWaypointsGenerated'), description: t('noWaypointsGeneratedDesc') });
         return;
     }
 
@@ -420,7 +423,7 @@ export default function FlightPlanner() {
 
         setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
         setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
-        toast({ title: "Survey Grid Updated", description: `${newWaypoints.length} waypoints generated.` });
+        toast({ title: t('surveyGridUpdated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
     } else {
         const newMission: SurveyMission = {
             id: missionCounter,
@@ -433,7 +436,7 @@ export default function FlightPlanner() {
         setMissions(prev => [...prev, newMission]);
         setMissionCounter(prev => prev + 1);
         setWaypoints(prev => [...prev, ...newWaypoints]);
-        toast({ title: "Survey Grid Created", description: `${newWaypoints.length} waypoints generated.` });
+        toast({ title: t('surveyGridCreated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
     }
 
     setWaypointCounter(currentWpCounter);
@@ -441,18 +444,18 @@ export default function FlightPlanner() {
     setEditingMissionId(null);
     setSurveyParams(prev => ({...prev, polygon: []}));
 
-}, [surveyParams, toast, waypointCounter, missionCounter, editingMissionId, missions]);
+}, [surveyParams, toast, waypointCounter, missionCounter, editingMissionId, missions, t]);
 
 const handleGenerateFacadeScan = useCallback(() => {
     if (!facadeLine) {
-        toast({ variant: "destructive", title: "Error", description: "Facade line is not defined." });
+        toast({ variant: "destructive", title: t('error'), description: t('facadeLineNotDefined') });
         return;
     }
 
     const waypointsData = generateFacadeWaypoints(facadeLine.start, facadeLine.end, facadeParams);
     
     if (waypointsData.length === 0) {
-        toast({ variant: "destructive", title: "No Waypoints", description: "Could not generate any waypoints for the given area and parameters." });
+        toast({ variant: "destructive", title: t('noWaypointsGenerated'), description: t('noWaypointsGeneratedDesc') });
         return;
     }
     
@@ -482,7 +485,7 @@ const handleGenerateFacadeScan = useCallback(() => {
         };
         setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
         setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
-        toast({ title: "Facade Scan Updated", description: `${newWaypoints.length} waypoints generated.` });
+        toast({ title: t('facadeScanUpdated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
 
     } else {
         const newMission: SurveyMission = {
@@ -496,14 +499,14 @@ const handleGenerateFacadeScan = useCallback(() => {
         setMissions(prev => [...prev, newMission]);
         setMissionCounter(prev => prev + 1);
         setWaypoints(prev => [...prev, ...newWaypoints]);
-        toast({ title: "Facade Scan Created", description: `${waypointsData.length} waypoints generated.` });
+        toast({ title: t('facadeScanCreated'), description: t('surveyGridCreatedSuccess', { count: waypointsData.length }) });
     }
 
     setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
     setEditingMissionId(null);
     setFacadeLine(null);
-}, [facadeLine, facadeParams, waypointCounter, toast, missionCounter, editingMissionId, missions]);
+}, [facadeLine, facadeParams, waypointCounter, toast, missionCounter, editingMissionId, missions, t]);
 
   const handleDrawRadiusRequest = useCallback(() => {
     const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
@@ -522,10 +525,10 @@ const handleGenerateFacadeScan = useCallback(() => {
     });
 
     toast({
-      title: "Draw Orbit Radius",
-      description: "Click and drag from the POI on the map to set the radius.",
+      title: t('drawOrbitRadiusTitle'),
+      description: t('drawOrbitRadiusDesc'),
     });
-  }, [pois, orbitParams.poiId, toast]);
+  }, [pois, orbitParams.poiId, toast, t]);
 
   const handleDrawSurveyAreaRequest = useCallback(() => {
     setActiveDialog(null);
@@ -536,16 +539,16 @@ const handleGenerateFacadeScan = useCallback(() => {
         setDrawingState({ mode: null, onComplete: () => {} });
         setActiveDialog('survey');
         toast({
-          title: "Survey Area Defined",
-          description: `${polygon.length} points selected.`,
+          title: t('surveyAreaDefined'),
+          description: t('surveyAreaDefinedDescToast', { points: polygon.length }),
         });
       },
     });
     toast({
-      title: "Drawing Survey Area",
-      description: "Click on the map to define corners. Click the first point again to close the polygon.",
+      title: t('drawSurveyAreaTitle'),
+      description: t('drawSurveyAreaDesc'),
     });
-  }, [toast]);
+  }, [toast, t]);
   
   const handleDrawGridAngleRequest = useCallback(() => {
     setActiveDialog(null);
@@ -557,16 +560,16 @@ const handleGenerateFacadeScan = useCallback(() => {
         setDrawingState({ mode: null, onComplete: () => {} });
         setActiveDialog('survey');
         toast({
-          title: "Grid Angle Set",
-          description: `Angle set to ${roundedAngle}°`,
+          title: t('gridAngleSet'),
+          description: t('gridAngleSetDesc', { angle: roundedAngle }),
         });
       }
     });
     toast({
-      title: "Draw Grid Angle",
-      description: "Click and drag on the map to define the angle of the flight lines.",
+      title: t('drawGridAngleTitle'),
+      description: t('drawGridAngleDesc'),
     });
-  }, [toast]);
+  }, [toast, t]);
 
   const handleDrawFacadeLineRequest = useCallback(() => {
     setActiveDialog(null);
@@ -577,24 +580,24 @@ const handleGenerateFacadeScan = useCallback(() => {
             setDrawingState({ mode: null, onComplete: () => {} });
             setActiveDialog('facade');
             toast({
-                title: "Facade Line Drawn",
-                description: "You can now adjust parameters and generate the scan.",
+                title: t('facadeLineDrawn'),
+                description: t('facadeLineDrawnDescToast'),
             });
         },
     });
     toast({
-        title: "Drawing Facade Line",
-        description: "Click and drag on the map along the building facade.",
+        title: t('drawFacadeLineTitle'),
+        description: t('drawFacadeLineDesc'),
     });
-  }, [toast]);
+  }, [toast, t]);
 
   const getHomeElevationFromFirstWaypoint = useCallback(async () => {
     if (waypoints.length === 0) {
-      toast({ title: "Info", description: "Add at least one waypoint to fetch its elevation." });
+      toast({ title: t('info'), description: t('addWaypointForElevation') });
       return;
     }
     const firstWp = waypoints[0];
-    toast({ title: "Fetching Elevation...", description: `Getting elevation for Waypoint 1.` });
+    toast({ title: t('fetchingElevation'), description: t('fetchingElevationForWp1') });
     const elevations = await getElevationsBatch([firstWp.latlng]);
     if (elevations && elevations.length > 0 && elevations[0] !== null) {
       const homeElev = Math.round(elevations[0]);
@@ -604,18 +607,18 @@ const handleGenerateFacadeScan = useCallback(() => {
         altitudeAdaptationMode: 'relative'
       }));
       setWaypoints(prev => prev.map(wp => wp.id === firstWp.id ? { ...wp, terrainElevationMSL: homeElev } : wp));
-      toast({ title: "Success", description: `Takeoff elevation set to ${homeElev}m based on Waypoint 1.` });
+      toast({ title: t('successTitle'), description: t('takeoffElevationSuccess', { elev: homeElev }) });
     } else {
-      toast({ variant: "destructive", title: "Error", description: "Failed to fetch elevation for Waypoint 1." });
+      toast({ variant: "destructive", title: t('error'), description: t('failedToFetchElevationWp1') });
     }
-  }, [waypoints, toast]);
+  }, [waypoints, toast, t]);
 
   const adaptToAGL = useCallback(async () => {
     if (waypoints.length === 0) {
-      toast({ title: "Info", description: "No waypoints to adapt." });
+      toast({ title: t('info'), description: t('noWaypointsToAdapt') });
       return;
     }
-    toast({ title: "Processing...", description: "Fetching terrain data for all waypoints." });
+    toast({ title: t('processing'), description: t('fetchingTerrainData') });
     const locations = waypoints.map(wp => wp.latlng);
     const elevations = await getElevationsBatch(locations);
 
@@ -638,20 +641,20 @@ const handleGenerateFacadeScan = useCallback(() => {
     setWaypoints(newWaypoints);
     setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'agl' }));
     if (successCount === waypoints.length && waypoints.length > 0) {
-        toast({ title: "Success", description: "All waypoint altitudes have been adapted to a constant AGL." });
+        toast({ title: t('successTitle'), description: t('adaptAglSuccess') });
     } else if (successCount > 0) {
-        toast({ title: "Partial Success", description: `Adapted ${successCount}/${waypoints.length} waypoints. Some terrain fetches failed.` });
+        toast({ title: t('partialSuccess'), description: t('adaptAglPartial', { count: successCount, total: waypoints.length }) });
     } else {
-        toast({ variant: "destructive", title: "Error", description: `Failed to adapt any waypoints.` });
+        toast({ variant: "destructive", title: t('error'), description: t('adaptAglFailure') });
     }
-  }, [waypoints, settings.desiredAGL, settings.homeElevationMsl, toast]);
+  }, [waypoints, settings.desiredAGL, settings.homeElevationMsl, toast, t]);
 
   const adaptToAMSL = useCallback(async () => {
     if (waypoints.length === 0) {
-      toast({ title: "Info", description: "No waypoints to adapt." });
+      toast({ title: t('info'), description: t('noWaypointsToAdapt') });
       return;
     }
-    toast({ title: "Processing...", description: "Fetching terrain data for all waypoints." });
+    toast({ title: t('processing'), description: t('fetchingTerrainData') });
     const locations = waypoints.map(wp => wp.latlng);
     const elevations = await getElevationsBatch(locations);
     const newWaypoints = waypoints.map((wp, index) => {
@@ -665,8 +668,8 @@ const handleGenerateFacadeScan = useCallback(() => {
 
     setWaypoints(newWaypoints);
     setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'amsl' }));
-    toast({ title: "Success", description: `All waypoint altitudes set to ${settings.desiredAMSL}m AMSL.` });
-  }, [waypoints, settings.desiredAMSL, settings.homeElevationMsl, toast]);
+    toast({ title: t('successTitle'), description: t('adaptAmslSuccess', { amsl: settings.desiredAMSL }) });
+  }, [waypoints, settings.desiredAMSL, settings.homeElevationMsl, toast, t]);
 
   const triggerImportJson = () => {
     fileInputRef.current?.click();
@@ -684,19 +687,17 @@ const handleGenerateFacadeScan = useCallback(() => {
         
         const plan = JSON.parse(text) as FlightPlan;
         
-        // Convert lat/lng objects if they are plain objects from JSON
         plan.waypoints.forEach(wp => { if (wp.latlng && !('lat' in wp.latlng)) { wp.latlng = { lat: (wp.latlng as any)._lat, lng: (wp.latlng as any)._lng } } });
         plan.pois.forEach(p => { if (p.latlng && !('lat' in p.latlng)) { p.latlng = { lat: (p.latlng as any)._lat, lng: (p.latlng as any)._lng } } });
 
-
         const errors = validateFlightPlanForImport(plan);
         if (errors.length > 0) {
-          throw new Error(errors.join('\n'));
+          throw new Error(errors.map(errKey => t(errKey)).join('\n'));
         }
         await loadFlightPlan(plan);
-        toast({ title: "Success", description: "Flight plan imported successfully!" });
+        toast({ title: t('successTitle'), description: t('import_success') });
       } catch (err: any) {
-        toast({ variant: "destructive", title: "Import Error", description: err.message });
+        toast({ variant: "destructive", title: t('importError'), description: err.message });
       }
     };
     reader.readAsText(file);
@@ -712,7 +713,6 @@ const handleGenerateFacadeScan = useCallback(() => {
     
     setSettings(plan.settings);
     
-    // Use the setters with functional updates to ensure correct state after async operations
     setPois(plan.pois || []);
     setWaypoints(plan.waypoints || []);
     setMissions(plan.missions || []);
@@ -744,19 +744,19 @@ const handleGenerateFacadeScan = useCallback(() => {
   
   const exportToJson = () => {
     if (waypoints.length === 0 && pois.length === 0) {
-      toast({ variant: "destructive", title: "Nothing to export" });
+      toast({ variant: "destructive", title: t('nothingToExport') });
       return;
     }
     const plan: FlightPlan = {
       waypoints, pois, missions, settings
     };
     downloadFile("flight_plan.json", JSON.stringify(plan, null, 2), "application/json");
-    toast({ title: "Exported to JSON" });
+    toast({ title: t('exportedToJson') });
   };
 
   const exportToKml = () => {
     if (waypoints.length === 0) {
-        toast({ variant: "destructive", title: "Nothing to export" });
+        toast({ variant: "destructive", title: t('nothingToExport') });
         return;
     }
     const homeElevationMSL = settings.homeElevationMsl;
@@ -789,13 +789,13 @@ const handleGenerateFacadeScan = useCallback(() => {
 
     const kmlContent = `${kmlHeader}${styles}${waypointsKml}${pathKml}${poisKml}${kmlFooter}`;
     downloadFile("flight_plan_GE.kml", kmlContent, "application/vnd.google-earth.kml+xml");
-    toast({ title: "Exported for Google Earth" });
+    toast({ title: t('exportedToKml') });
   };
 
   const exportToKmz = () => {
     const validationErrors = validateFlightPlanForWpml(waypoints);
     if (validationErrors.length > 0) {
-        toast({ variant: 'destructive', title: 'Export Error', description: validationErrors.join(' ') });
+        toast({ variant: 'destructive', title: t('errorTitle'), description: validationErrors.map(key => t(key)).join(' ') });
         return;
     }
 
@@ -882,8 +882,8 @@ const handleGenerateFacadeScan = useCallback(() => {
     zip.folder("wpmz")?.file("template.kml", templateKml).file("waylines.wpml", waylinesWpml);
     zip.generateAsync({ type: "blob", mimeType: "application/vnd.google-earth.kmz" })
         .then(blob => downloadFile(`flight_plan_dji_${waylineIdInt}.kmz`, blob, 'application/vnd.google-earth.kmz'))
-        .catch(err => toast({ variant: 'destructive', title: 'KMZ Generation Error', description: err.message }));
-    toast({ title: 'Exported DJI KMZ' });
+        .catch(err => toast({ variant: 'destructive', title: t('kmzGenError'), description: err.message }));
+    toast({ title: t('exportedToKmz') });
   };
 
 
@@ -909,10 +909,10 @@ const handleGenerateFacadeScan = useCallback(() => {
     if (drawingState.mode) return;
     if (event.originalEvent.ctrlKey) {
         addPoi(latlng, poiName, poiHeight);
-        toast({ title: "POI Added", description: `${poiName || 'POI ' + poiCounter} created at clicked location.` });
+        toast({ title: t('poiAdded'), description: t('poiCreated', { name: poiName || `POI ${poiCounter}` }) });
     } else {
         addWaypoint(latlng);
-        toast({ title: "Waypoint Added", description: `Waypoint ${waypointCounter} created at clicked location.` });
+        toast({ title: t('waypointAdded'), description: t('waypointCreated', { count: waypointCounter }) });
     }
   };
 
@@ -1019,4 +1019,12 @@ const handleGenerateFacadeScan = useCallback(() => {
       />
     </div>
   );
+}
+
+export default function FlightPlanner() {
+    return (
+        <TranslationProvider>
+            <FlightPlannerUI />
+        </TranslationProvider>
+    );
 }
