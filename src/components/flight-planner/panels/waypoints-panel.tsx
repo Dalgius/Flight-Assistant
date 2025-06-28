@@ -37,7 +37,7 @@ const WaypointItem = ({ waypoint, isSelected, onSelect, isMultiSelected, onMulti
           <MapPin className="w-5 h-5 text-primary shrink-0" />
           <div className="flex-1 overflow-hidden">
             <p className="font-semibold truncate">Waypoint {waypoint.id}</p>
-            <p className="text-xs text-muted-foreground truncate">{`Alt: ${waypoint.altitude}m, Pitch: ${waypoint.gimbalPitch}°`}</p>
+            <p className="text-xs text-muted-foreground truncate">{`Alt: ${waypoint.altitude.toFixed(2)}m, Pitch: ${waypoint.gimbalPitch}°`}</p>
           </div>
           {waypoint.cameraAction !== 'none' && <Camera className="w-4 h-4 text-accent shrink-0" />}
         </div>
