@@ -4,7 +4,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
-import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData } from '@/components/flight-planner/types';
+import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData, SurveyMission } from '@/components/flight-planner/types';
 import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints } from '@/lib/flight-plan-calcs';
 
 import { ActionBar } from '@/components/flight-planner/action-bar';
@@ -21,6 +21,7 @@ export default function FlightPlanner() {
   
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [pois, setPois] = useState<POI[]>([]);
+  const [missions, setMissions] = useState<SurveyMission[]>([]);
   const [settings, setSettings] = useState<FlightPlanSettings>({
     defaultAltitude: 50,
     flightSpeed: 8.5,
@@ -33,6 +34,10 @@ export default function FlightPlanner() {
   
   const [waypointCounter, setWaypointCounter] = useState(1);
   const [poiCounter, setPoiCounter] = useState(1);
+  const [missionCounter, setMissionCounter] = useState(1);
+
+  const [editingMissionId, setEditingMissionId] = useState<number | null>(null);
+
 
   // Lifted state for dialogs
   const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
@@ -157,10 +162,12 @@ export default function FlightPlanner() {
   const clearWaypoints = useCallback(() => {
     setWaypoints([]);
     setPois([]);
+    setMissions([]);
     setSelectedWaypointId(null);
     setMultiSelectedWaypointIds(new Set());
     setWaypointCounter(1);
     setPoiCounter(1);
+    setMissionCounter(1);
     toast({ title: "Mission Cleared", description: "All waypoints and POIs have been removed." });
   }, [toast]);
 
@@ -184,6 +191,39 @@ export default function FlightPlanner() {
     setWaypoints(prev => prev.map(wp => wp.targetPoiId === id ? {...wp, targetPoiId: null} : wp));
   }, []);
 
+  const deleteMission = useCallback((missionId: number) => {
+    const missionToDelete = missions.find(m => m.id === missionId);
+    if (!missionToDelete) return;
+
+    const waypointIdsToDelete = new Set(missionToDelete.waypointIds);
+    setWaypoints(prev => prev.filter(wp => !waypointIdsToDelete.has(wp.id)));
+    setMissions(prev => prev.filter(m => m.id !== missionId));
+
+    toast({
+        title: "Mission Deleted",
+        description: `Mission "${missionToDelete.name}" and its ${missionToDelete.waypointIds.length} waypoints have been removed.`
+    });
+  }, [missions, toast]);
+
+  const handleEditMission = useCallback((missionId: number) => {
+    const mission = missions.find(m => m.id === missionId);
+    if (!mission) return;
+
+    setEditingMissionId(missionId);
+
+    if (mission.type === 'Grid' && mission.parameters) {
+      setSurveyParams({ ...(mission.parameters as Omit<SurveyGridParams, 'polygon'>), polygon: mission.polygon || [] });
+      setActiveDialog('survey');
+    } else if (mission.type === 'Facade' && mission.parameters) {
+      setFacadeParams(mission.parameters as FacadeScanParams);
+      if (mission.line) {
+        setFacadeLine(mission.line);
+      }
+      setActiveDialog('facade');
+    }
+  }, [missions]);
+
+
   const handleCreateOrbit = useCallback(() => {
     const { poiId, radius, numPoints } = orbitParams;
     const centerPoi = pois.find(p => p.id === parseInt(poiId));
@@ -200,9 +240,8 @@ export default function FlightPlanner() {
 
     const calculatedGimbalPitch = calculateRequiredGimbalPitch(orbitWpAMSL, poiAMSL, radius);
 
-    const newWaypoints: Waypoint[] = [];
     let currentWpCounter = waypointCounter;
-
+    const newWaypoints: Waypoint[] = [];
     for (let i = 0; i < numPoints; i++) {
         const angle = (i / numPoints) * 2 * Math.PI;
         const latRad = toRad(centerPoi.latlng.lat);
@@ -232,12 +271,22 @@ export default function FlightPlanner() {
         newWaypoints.push(newWaypoint);
     }
     
+    const newMission: SurveyMission = {
+        id: missionCounter,
+        name: `Orbit ${centerPoi.name}`,
+        type: 'Orbit',
+        waypointIds: newWaypoints.map(wp => wp.id),
+        parameters: { poiId: centerPoi.id, radius, numPoints },
+    };
+    setMissions(prev => [...prev, newMission]);
+    setMissionCounter(prev => prev + 1);
+
     setWaypoints(prev => [...prev, ...newWaypoints]);
     setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
     toast({ title: "Orbit Created", description: `${numPoints} waypoints generated around ${centerPoi.name}.` });
 
-  }, [pois, settings, waypointCounter, toast, orbitParams]);
+  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter]);
 
   const handleCreateSurveyGrid = useCallback(() => {
     const { polygon, altitude, sidelap, frontlap, angle } = surveyParams;
@@ -266,12 +315,43 @@ export default function FlightPlanner() {
         return newWp;
     });
 
-    setWaypoints(prev => [...prev, ...newWaypoints]);
+    if (editingMissionId) {
+        const missionToUpdate = missions.find(m => m.id === editingMissionId);
+        if (!missionToUpdate) return;
+        
+        const oldWaypointIds = new Set(missionToUpdate.waypointIds);
+
+        const updatedMission: SurveyMission = {
+            ...missionToUpdate,
+            parameters: { altitude, sidelap, frontlap, angle },
+            polygon: polygon,
+            waypointIds: newWaypoints.map(wp => wp.id),
+        };
+
+        setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
+        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        toast({ title: "Survey Grid Updated", description: `${newWaypoints.length} waypoints generated.` });
+    } else {
+        const newMission: SurveyMission = {
+            id: missionCounter,
+            name: `Survey Grid ${missionCounter}`,
+            type: 'Grid',
+            waypointIds: newWaypoints.map(wp => wp.id),
+            parameters: { altitude, sidelap, frontlap, angle },
+            polygon: polygon,
+        };
+        setMissions(prev => [...prev, newMission]);
+        setMissionCounter(prev => prev + 1);
+        setWaypoints(prev => [...prev, ...newWaypoints]);
+        toast({ title: "Survey Grid Created", description: `${newWaypoints.length} waypoints generated.` });
+    }
+
     setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
-    toast({ title: "Survey Grid Created", description: `${waypointsData.length} waypoints generated.` });
+    setEditingMissionId(null);
+    setSurveyParams(prev => ({...prev, polygon: []}));
 
-}, [surveyParams, toast, waypointCounter]);
+}, [surveyParams, toast, waypointCounter, missionCounter, editingMissionId, missions]);
 
 const handleGenerateFacadeScan = useCallback(() => {
     if (!facadeLine) {
@@ -299,12 +379,41 @@ const handleGenerateFacadeScan = useCallback(() => {
         return newWp;
     });
 
-    setWaypoints(prev => [...prev, ...newWaypoints]);
+    if (editingMissionId) {
+        const missionToUpdate = missions.find(m => m.id === editingMissionId);
+        if (!missionToUpdate) return;
+        const oldWaypointIds = new Set(missionToUpdate.waypointIds);
+        
+        const updatedMission: SurveyMission = {
+            ...missionToUpdate,
+            parameters: facadeParams,
+            line: facadeLine,
+            waypointIds: newWaypoints.map(wp => wp.id),
+        };
+        setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
+        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        toast({ title: "Facade Scan Updated", description: `${newWaypoints.length} waypoints generated.` });
+
+    } else {
+        const newMission: SurveyMission = {
+            id: missionCounter,
+            name: `Facade Scan ${missionCounter}`,
+            type: 'Facade',
+            waypointIds: newWaypoints.map(wp => wp.id),
+            parameters: facadeParams,
+            line: facadeLine,
+        };
+        setMissions(prev => [...prev, newMission]);
+        setMissionCounter(prev => prev + 1);
+        setWaypoints(prev => [...prev, ...newWaypoints]);
+        toast({ title: "Facade Scan Created", description: `${waypointsData.length} waypoints generated.` });
+    }
+
     setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
-    setFacadeLine(null); // Reset after generation
-    toast({ title: "Facade Scan Created", description: `${waypointsData.length} waypoints generated.` });
-}, [facadeLine, facadeParams, waypointCounter, toast]);
+    setEditingMissionId(null);
+    setFacadeLine(null);
+}, [facadeLine, facadeParams, waypointCounter, toast, missionCounter, editingMissionId, missions]);
 
   const handleDrawRadiusRequest = useCallback(() => {
     const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
@@ -432,8 +541,9 @@ const handleGenerateFacadeScan = useCallback(() => {
     toggleMultiSelectWaypoint, clearMultiSelection, selectAllWaypoints,
     clearWaypoints, deleteMultiSelectedWaypoints,
     pois, addPoi, deletePoi,
+    missions, deleteMission, editMission: handleEditMission,
     flightStats,
-    onOpenDialog: handleOpenDialog
+    onOpenDialog: handleOpenDialog,
   };
 
   return (
@@ -461,7 +571,12 @@ const handleGenerateFacadeScan = useCallback(() => {
 
       <OrbitDialog
         open={activeDialog === 'orbit'}
-        onOpenChange={(isOpen) => !isOpen && setActiveDialog(null)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setActiveDialog(null);
+            setEditingMissionId(null);
+          }
+        }}
         pois={pois}
         params={orbitParams}
         onParamsChange={setOrbitParams}
@@ -470,7 +585,13 @@ const handleGenerateFacadeScan = useCallback(() => {
       />
       <SurveyGridDialog
         open={activeDialog === 'survey'}
-        onOpenChange={(isOpen) => !isOpen && setActiveDialog(null)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setActiveDialog(null);
+            setEditingMissionId(null);
+          }
+        }}
+        isEditing={!!editingMissionId}
         params={surveyParams}
         onParamsChange={setSurveyParams}
         onDrawArea={handleDrawSurveyAreaRequest}
@@ -482,9 +603,11 @@ const handleGenerateFacadeScan = useCallback(() => {
         onOpenChange={(isOpen) => {
             if (!isOpen) {
                 setActiveDialog(null);
+                setEditingMissionId(null);
                 setFacadeLine(null);
             }
         }}
+        isEditing={!!editingMissionId}
         params={facadeParams}
         onParamsChange={setFacadeParams}
         onDrawLine={handleDrawFacadeLineRequest}
