@@ -262,8 +262,9 @@ export function generateFacadeWaypoints(
     const horizontalStep = horizontalFootprint * (1 - horizontalOverlap / 100);
 
     const facadeLength = haversineDistance(startPoint, endPoint);
-    const numHorizontalPoints = facadeLength > 0 ? Math.ceil(facadeLength / horizontalStep) : 1;
-    const numVerticalPoints = maxHeight > minHeight ? Math.ceil((maxHeight - minHeight) / verticalStep) : 1;
+    
+    const numHorizontalPoints = facadeLength > 0 ? Math.floor(facadeLength / horizontalStep) + 1 : 1;
+    const numVerticalPoints = maxHeight > minHeight ? Math.floor((maxHeight - minHeight) / verticalStep) + 1 : 1;
     
     let scanDirection = 1;
     const finalWaypointsData: GeneratedWaypointData[] = [];
@@ -274,7 +275,9 @@ export function generateFacadeWaypoints(
         for (let j = 0; j < numHorizontalPoints; j++) {
             let pointIndex = scanDirection === 1 ? j : (numHorizontalPoints - 1 - j);
             
-            const fractionAlongFacade = numHorizontalPoints > 1 ? Math.min(1, (pointIndex * horizontalStep) / facadeLength) : 0;
+            const fractionAlongFacade = numHorizontalPoints > 1 
+                                        ? Math.min(1, (pointIndex * horizontalStep) / facadeLength) 
+                                        : 0;
             
             const pointOnFacade = {
                 lat: startPoint.lat + (endPoint.lat - startPoint.lat) * fractionAlongFacade,
@@ -297,4 +300,47 @@ export function generateFacadeWaypoints(
         scanDirection *= -1;
     }
     return finalWaypointsData;
+}
+
+export async function getElevationsBatch(locations: LatLng[]): Promise<(number | null)[]> {
+    if (locations.length === 0) {
+        return [];
+    }
+    
+    const batchSize = 100;
+    const results: (number | null)[] = new Array(locations.length).fill(null);
+    
+    for (let i = 0; i < locations.length; i += batchSize) {
+        const batch = locations.slice(i, i + batchSize);
+        const locationsString = batch.map(loc => `${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`).join('|');
+        
+        try {
+            const response = await fetch(`/api/elevation?locations=${encodeURIComponent(locationsString)}`);
+            
+            if (!response.ok) {
+                console.error(`Elevation API Error: Status ${response.status}`);
+                continue; 
+            }
+            
+            const data = await response.json();
+
+            if (data.status === "OK" && data.results) {
+                 data.results.forEach((result: { elevation: number | null }, indexInBatch: number) => {
+                    const originalIndex = i + indexInBatch;
+                    if (result.elevation !== null) {
+                        results[originalIndex] = parseFloat(result.elevation.toFixed(1));
+                    }
+                });
+            } else {
+                 console.warn("Elevation API response not OK or no results:", data);
+            }
+        } catch (error) {
+            console.error("Exception during batch elevation fetch:", error);
+        }
+        if (i + batchSize < locations.length) {
+            await new Promise(resolve => setTimeout(resolve, 1100));
+        }
+    }
+    
+    return results;
 }
