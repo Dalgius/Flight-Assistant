@@ -220,11 +220,18 @@ export default function FlightPlanner() {
         setFacadeLine(mission.line);
       }
       setActiveDialog('facade');
+    } else if (mission.type === 'Orbit' && mission.parameters) {
+      const params = mission.parameters as { poiId: string, radius: number, numPoints: number };
+      setOrbitParams({
+          poiId: String(params.poiId),
+          radius: params.radius,
+          numPoints: params.numPoints,
+      });
+      setActiveDialog('orbit');
     }
   }, [missions]);
 
-
-  const handleCreateOrbit = useCallback(() => {
+  const handleSaveOrbit = useCallback(() => {
     const { poiId, radius, numPoints } = orbitParams;
     const centerPoi = pois.find(p => p.id === parseInt(poiId));
     if (!centerPoi) {
@@ -271,22 +278,40 @@ export default function FlightPlanner() {
         newWaypoints.push(newWaypoint);
     }
     
-    const newMission: SurveyMission = {
-        id: missionCounter,
-        name: `Orbit ${centerPoi.name}`,
-        type: 'Orbit',
-        waypointIds: newWaypoints.map(wp => wp.id),
-        parameters: { poiId: centerPoi.id, radius, numPoints },
-    };
-    setMissions(prev => [...prev, newMission]);
-    setMissionCounter(prev => prev + 1);
+    if (editingMissionId) {
+        const missionToUpdate = missions.find(m => m.id === editingMissionId);
+        if (!missionToUpdate) return;
+        
+        const oldWaypointIds = new Set(missionToUpdate.waypointIds);
+        const updatedMission: SurveyMission = {
+            ...missionToUpdate,
+            name: `Orbit ${centerPoi.name}`,
+            parameters: { poiId: centerPoi.id, radius, numPoints },
+            waypointIds: newWaypoints.map(wp => wp.id),
+        };
 
-    setWaypoints(prev => [...prev, ...newWaypoints]);
+        setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
+        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        toast({ title: "Orbit Updated", description: `${newWaypoints.length} waypoints updated for ${centerPoi.name}.` });
+    } else {
+        const newMission: SurveyMission = {
+            id: missionCounter,
+            name: `Orbit ${centerPoi.name}`,
+            type: 'Orbit',
+            waypointIds: newWaypoints.map(wp => wp.id),
+            parameters: { poiId: centerPoi.id, radius, numPoints },
+        };
+        setMissions(prev => [...prev, newMission]);
+        setMissionCounter(prev => prev + 1);
+        setWaypoints(prev => [...prev, ...newWaypoints]);
+        toast({ title: "Orbit Created", description: `${numPoints} waypoints generated around ${centerPoi.name}.` });
+    }
+
     setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
-    toast({ title: "Orbit Created", description: `${numPoints} waypoints generated around ${centerPoi.name}.` });
+    setEditingMissionId(null);
 
-  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter]);
+  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter, editingMissionId, missions]);
 
   const handleCreateSurveyGrid = useCallback(() => {
     const { polygon, altitude, sidelap, frontlap, angle } = surveyParams;
@@ -577,10 +602,11 @@ const handleGenerateFacadeScan = useCallback(() => {
             setEditingMissionId(null);
           }
         }}
+        isEditing={!!editingMissionId && activeDialog === 'orbit'}
         pois={pois}
         params={orbitParams}
         onParamsChange={setOrbitParams}
-        onCreateOrbit={handleCreateOrbit}
+        onCreateOrbit={handleSaveOrbit}
         onDrawRadius={handleDrawRadiusRequest}
       />
       <SurveyGridDialog
