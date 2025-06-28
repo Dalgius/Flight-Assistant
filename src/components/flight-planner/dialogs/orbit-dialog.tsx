@@ -1,5 +1,7 @@
+
 "use client";
 
+import { useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,13 +15,38 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Orbit, Radius } from 'lucide-react';
+import type { POI } from '../types';
 
 interface OrbitDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  pois: POI[];
+  params: {
+    poiId: string;
+    radius: number;
+    numPoints: number;
+  };
+  onParamsChange: (params: OrbitDialogProps['params']) => void;
+  onCreateOrbit: () => void;
+  onDrawRadius: () => void;
 }
 
-export function OrbitDialog({ open, onOpenChange }: OrbitDialogProps) {
+export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, onCreateOrbit, onDrawRadius }: OrbitDialogProps) {
+  
+  useEffect(() => {
+    if (open && pois.length > 0) {
+      if (!params.poiId || !pois.some(p => String(p.id) === params.poiId)) {
+        onParamsChange({ ...params, poiId: String(pois[0].id) });
+      }
+    }
+  }, [open, pois, params, onParamsChange]);
+
+  const handleValueChange = (field: keyof typeof params, value: string | number) => {
+    onParamsChange({ ...params, [field]: value });
+  };
+
+  const canCreate = parseInt(params.poiId) > 0 && params.radius > 0 && params.numPoints >= 3;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -32,35 +59,52 @@ export function OrbitDialog({ open, onOpenChange }: OrbitDialogProps) {
         <div className="space-y-4 py-4">
           <div className="space-y-2">
             <Label htmlFor="orbitPoi">Center POI</Label>
-            <Select>
+            <Select 
+              onValueChange={(value) => handleValueChange('poiId', value)} 
+              value={params.poiId} 
+              disabled={pois.length === 0}
+            >
               <SelectTrigger id="orbitPoi">
                 <SelectValue placeholder="Select a POI" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">Duomo di Milano</SelectItem>
-                <SelectItem value="2">Castello Sforzesco</SelectItem>
+                {pois.map(p => (
+                   <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="orbitRadius">Radius (meters)</Label>
             <div className="flex items-center gap-2">
-              <Input id="orbitRadius" type="number" defaultValue={30} min={5} />
-              <Button variant="outline" size="icon">
+              <Input 
+                id="orbitRadius" 
+                type="number" 
+                value={params.radius}
+                onChange={e => handleValueChange('radius', Number(e.target.value))}
+                min={5} 
+              />
+              <Button variant="outline" size="icon" onClick={onDrawRadius} disabled={!params.poiId}>
                 <Radius className="w-4 h-4" />
               </Button>
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="orbitPoints">Number of Waypoints</Label>
-            <Input id="orbitPoints" type="number" defaultValue={8} min={3} />
+            <Input 
+              id="orbitPoints" 
+              type="number" 
+              value={params.numPoints}
+              onChange={e => handleValueChange('numPoints', Number(e.target.value))}
+              min={3} 
+            />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button>
+          <Button onClick={onCreateOrbit} disabled={!canCreate}>
             <Orbit className="w-4 h-4 mr-2" />
             Create Orbit
           </Button>
