@@ -1,10 +1,11 @@
+
 "use client";
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
-import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics } from '@/components/flight-planner/types';
-import { haversineDistance } from '@/lib/flight-plan-calcs';
+import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState } from '@/components/flight-planner/types';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH } from '@/lib/flight-plan-calcs';
 
 import { ActionBar } from '@/components/flight-planner/action-bar';
 import { SidePanel } from '@/components/flight-planner/side-panel';
@@ -32,6 +33,9 @@ export default function FlightPlanner() {
   
   const [waypointCounter, setWaypointCounter] = useState(1);
   const [poiCounter, setPoiCounter] = useState(1);
+
+  const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
+  const [drawingState, setDrawingState] = useState<DrawingState>({ mode: null, onComplete: () => {} });
   
   const MapView = useMemo(() => dynamic(() => import('@/components/flight-planner/map-view').then(mod => mod.MapView), { 
     ssr: false,
@@ -43,6 +47,13 @@ export default function FlightPlanner() {
   };
 
   const handleOpenDialog = (dialog: DialogType) => {
+    if (dialog === 'orbit' && pois.length > 0) {
+        // Pre-fill with the first POI if none is selected or the selected one is invalid
+        const validPoiSelected = pois.some(p => p.id === parseInt(orbitParams.poiId));
+        if (!validPoiSelected) {
+            setOrbitParams({ poiId: String(pois[0].id), radius: 30, numPoints: 8 });
+        }
+    }
     setActiveDialog(dialog);
   };
   
@@ -118,7 +129,7 @@ export default function FlightPlanner() {
         setMultiSelectedWaypointIds(new Set(waypoints.map(wp => wp.id)));
     }
     setSelectedWaypointId(null);
-  }, [waypoints]);
+  }, [waypoints, multiSelectedWaypointIds.size]);
 
   const clearWaypoints = useCallback(() => {
     setWaypoints([]);
@@ -150,6 +161,84 @@ export default function FlightPlanner() {
     setWaypoints(prev => prev.map(wp => wp.targetPoiId === id ? {...wp, targetPoiId: null} : wp));
   }, []);
 
+  const handleCreateOrbit = useCallback(() => {
+    const { poiId, radius, numPoints } = orbitParams;
+    const centerPoi = pois.find(p => p.id === parseInt(poiId));
+    if (!centerPoi) {
+      toast({ variant: "destructive", title: "Error", description: "Selected POI not found." });
+      return;
+    }
+
+    const altitudeRelToHome = settings.defaultAltitude;
+    const homeElevation = settings.homeElevationMsl;
+    const orbitWpAMSL = homeElevation + altitudeRelToHome;
+    
+    const poiAMSL = centerPoi.altitude; 
+
+    const calculatedGimbalPitch = calculateRequiredGimbalPitch(orbitWpAMSL, poiAMSL, radius);
+
+    const newWaypoints: Waypoint[] = [];
+    let currentWpCounter = waypointCounter;
+
+    for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * 2 * Math.PI;
+        const latRad = toRad(centerPoi.latlng.lat);
+        const lngRad = toRad(centerPoi.latlng.lng);
+
+        const pointLatRad = Math.asin(Math.sin(latRad) * Math.cos(radius / R_EARTH) +
+                                    Math.cos(latRad) * Math.sin(radius / R_EARTH) * Math.cos(angle));
+        const pointLngRad = lngRad + Math.atan2(Math.sin(angle) * Math.sin(radius / R_EARTH) * Math.cos(latRad),
+                                             Math.cos(radius / R_EARTH) - Math.sin(latRad) * Math.sin(pointLatRad));
+        
+        const newLat = pointLatRad * 180 / Math.PI;
+        const newLng = pointLngRad * 180 / Math.PI;
+
+        const newWaypoint: Waypoint = {
+            id: currentWpCounter++,
+            latlng: { lat: newLat, lng: newLng },
+            altitude: altitudeRelToHome, 
+            headingControl: 'poi_track', 
+            targetPoiId: centerPoi.id,
+            gimbalPitch: calculatedGimbalPitch,
+            waypointType: 'orbit',
+            hoverTime: 0,
+            fixedHeading: 0,
+            cameraAction: 'none',
+            terrainElevationMSL: null,
+        };
+        newWaypoints.push(newWaypoint);
+    }
+    
+    setWaypoints(prev => [...prev, ...newWaypoints]);
+    setWaypointCounter(currentWpCounter);
+    setActiveDialog(null);
+    toast({ title: "Orbit Created", description: `${numPoints} waypoints generated around ${centerPoi.name}.` });
+
+  }, [pois, settings, waypointCounter, toast, orbitParams]);
+
+  const handleDrawRadiusRequest = useCallback(() => {
+    const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
+    if (!centerPoi) return;
+    
+    setActiveDialog(null);
+    
+    setDrawingState({
+      mode: 'orbitRadius',
+      center: centerPoi.latlng,
+      onComplete: (newRadius: number) => {
+        setOrbitParams(prev => ({ ...prev, radius: Math.round(newRadius) }));
+        setDrawingState({ mode: null, onComplete: () => {} });
+        setActiveDialog('orbit');
+      }
+    });
+
+    toast({
+      title: "Draw Orbit Radius",
+      description: "Click and drag from the POI on the map to set the radius.",
+    });
+  }, [pois, orbitParams.poiId, toast]);
+
+
   const flightStats: FlightStatistics = useMemo(() => {
     let totalDistance = 0;
     if (waypoints.length > 1) {
@@ -166,11 +255,11 @@ export default function FlightPlanner() {
       waypointCount: waypoints.length,
       poiCount: pois.length,
     };
-  }, [waypoints, pois, settings.flightSpeed]);
+  }, [waypoints, pois.length, settings.flightSpeed]);
 
   const handleMapClick = (latlng: LatLng, event: any) => {
+    if (drawingState.mode) return;
     if (event.originalEvent.ctrlKey) {
-        // A real implementation would open a small dialog to ask for POI name
         addPoi(latlng, `POI ${poiCounter}`, 10);
         toast({ title: "POI Added", description: `POI ${poiCounter} created at clicked location.` });
     } else {
@@ -212,6 +301,7 @@ export default function FlightPlanner() {
             pathType={settings.pathType}
             selectedWaypointId={selectedWaypointId}
             multiSelectedWaypointIds={multiSelectedWaypointIds}
+            drawingState={drawingState}
             onMapClick={handleMapClick}
             onMarkerClick={(id) => selectWaypoint(id)}
             onMarkerDragEnd={updateWaypoint}
@@ -221,6 +311,11 @@ export default function FlightPlanner() {
       <OrbitDialog
         open={activeDialog === 'orbit'}
         onOpenChange={(isOpen) => !isOpen && setActiveDialog(null)}
+        pois={pois}
+        params={orbitParams}
+        onParamsChange={setOrbitParams}
+        onCreateOrbit={handleCreateOrbit}
+        onDrawRadius={handleDrawRadiusRequest}
       />
       <SurveyGridDialog
         open={activeDialog === 'survey'}
