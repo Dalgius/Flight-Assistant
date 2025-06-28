@@ -248,10 +248,8 @@ export function generateFacadeWaypoints(
 ): GeneratedWaypointData[] {
     const { side, distance, minHeight, maxHeight, gimbalPitch, horizontalOverlap, verticalOverlap } = params;
     
-    // The bearing is simply calculated from the start and end points of the drawn line.
     const facadeBearing = calculateBearing(startPoint, endPoint);
     
-    // 'left' or 'right' is relative to this bearing.
     const offsetAngle = (side === 'left') ? -90 : 90;
     const offsetBearing = (facadeBearing + offsetAngle + 360) % 360;
     const droneHeading = (facadeBearing - offsetAngle + 360) % 360;
@@ -264,10 +262,8 @@ export function generateFacadeWaypoints(
     const horizontalStep = horizontalFootprint * (1 - horizontalOverlap / 100);
 
     const facadeLength = haversineDistance(startPoint, endPoint);
-    
-    // Match original project's calculation for number of points
-    const numHorizontalPoints = facadeLength > 0 ? Math.floor(facadeLength / horizontalStep) + 1 : 1;
-    const numVerticalPoints = maxHeight > minHeight ? Math.floor((maxHeight - minHeight) / verticalStep) + 1 : 1;
+    const numHorizontalPoints = facadeLength > 0 ? Math.ceil(facadeLength / horizontalStep) : 1;
+    const numVerticalPoints = maxHeight > minHeight ? Math.ceil((maxHeight - minHeight) / verticalStep) : 1;
     
     let scanDirection = 1;
     const finalWaypointsData: GeneratedWaypointData[] = [];
@@ -278,9 +274,7 @@ export function generateFacadeWaypoints(
         for (let j = 0; j < numHorizontalPoints; j++) {
             let pointIndex = scanDirection === 1 ? j : (numHorizontalPoints - 1 - j);
             
-            const fractionAlongFacade = numHorizontalPoints > 1 
-                                        ? Math.min(1, (pointIndex * horizontalStep) / facadeLength) 
-                                        : 0;
+            const fractionAlongFacade = numHorizontalPoints > 1 ? Math.min(1, (pointIndex * horizontalStep) / facadeLength) : 0;
             
             const pointOnFacade = {
                 lat: startPoint.lat + (endPoint.lat - startPoint.lat) * fractionAlongFacade,
