@@ -18,7 +18,6 @@ import { StatsPanel } from './panels/stats-panel';
 interface SidePanelProps extends PanelProps {
   activePanel: PanelType | null;
   onClose: () => void;
-  onOpenDialog: (dialog: DialogType) => void;
 }
 
 const panelConfig = {
