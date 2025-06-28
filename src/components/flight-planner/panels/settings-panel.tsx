@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -5,9 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { PanelProps, FlightPlanSettings } from '../types';
+import { useTranslation } from '@/hooks/use-translation';
 
 
 export function SettingsPanel({ settings, updateSettings }: PanelProps) {
+  const { t } = useTranslation();
   
   const handleSettingsChange = (key: keyof FlightPlanSettings, value: string | number) => {
     updateSettings({ [key]: value });
@@ -17,12 +20,12 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>General Settings</CardTitle>
+          <CardTitle>{t('flightSettingsTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-2">
             <Label htmlFor="defaultAltitude" className="flex justify-between">
-              <span>Default Altitude</span>
+              <span>{t('defaultAltitudeLabel')} <span className="text-muted-foreground font-normal text-xs">{t('defaultAltitudeHint')}</span></span>
               <span>{settings.defaultAltitude} m</span>
             </Label>
             <Slider
@@ -37,7 +40,7 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
 
           <div className="space-y-2">
             <Label htmlFor="flightSpeed" className="flex justify-between">
-              <span>Flight Speed</span>
+              <span>{t('flightSpeedLabel')}</span>
               <span>{settings.flightSpeed.toFixed(1)} m/s</span>
             </Label>
             <Slider
@@ -51,7 +54,7 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="pathType">Path Type</Label>
+            <Label htmlFor="pathType">{t('pathTypeLabel')}</Label>
             <Select 
               value={settings.pathType} 
               onValueChange={(value: 'straight' | 'curved') => handleSettingsChange('pathType', value)}
@@ -60,8 +63,8 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
                 <SelectValue placeholder="Select path type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="straight">Straight Lines</SelectItem>
-                <SelectItem value="curved">Curved Transitions</SelectItem>
+                <SelectItem value="straight">{t('pathTypeStraight')}</SelectItem>
+                <SelectItem value="curved">{t('pathTypeCurved')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
