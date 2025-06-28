@@ -31,31 +31,37 @@ const MapEvents = ({ onMapClick }: { onMapClick: (latlng: LatLng, event: any) =>
     return null;
 };
 
-const MapController = ({ waypoints, pois, isPanelOpen }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean }) => {
+const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
     
+    // Fit bounds on initial load
     useEffect(() => {
-        const fitBounds = () => {
-            if (waypoints.length === 0 && pois.length === 0) {
-                map.setView([42.5, 12.5], 6); // Default view for Italy
-                return;
-            }
-            
-            const bounds = L.latLngBounds([]);
-            waypoints.forEach(wp => bounds.extend(wp.latlng));
-            pois.forEach(p => bounds.extend(p.latlng));
-
-            if (bounds.isValid()) {
-                map.fitBounds(bounds.pad(0.1));
-            }
-        };
-        fitBounds();
-    }, [waypoints, pois, map]);
-
+      const allPoints = [...waypoints.map(wp => wp.latlng), ...pois.map(p => p.latlng)];
+      if (allPoints.length > 0) {
+        const bounds = L.latLngBounds(allPoints);
+        if (bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.1));
+        }
+      } else {
+        map.setView([42.5, 12.5], 6); // Default view for Italy
+      }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    
     useEffect(() => {
         // Invalidate map size when panel opens/closes to fix gray areas
         setTimeout(() => map.invalidateSize(), 310);
     }, [isPanelOpen, map]);
+
+    // Pan to newly selected waypoint
+    useEffect(() => {
+        if (selectedWaypointId) {
+            const wp = waypoints.find(w => w.id === selectedWaypointId);
+            if (wp) {
+                map.panTo(wp.latlng);
+            }
+        }
+    }, [selectedWaypointId, map, waypoints]);
 
     return null;
 };
@@ -265,7 +271,12 @@ export function MapView(props: MapViewProps) {
               />
               <ScaleControl position="bottomleft" />
               <MapEvents onMapClick={onMapClick} />
-              <MapController waypoints={waypoints} pois={pois} isPanelOpen={isPanelOpen} />
+              <MapController 
+                waypoints={waypoints} 
+                pois={pois}
+                isPanelOpen={isPanelOpen} 
+                selectedWaypointId={selectedWaypointId}
+              />
 
               {pathCoords.length > 1 && <Polyline positions={pathCoords} color="#3498db" weight={3} dashArray={pathType === 'straight' ? '5, 5' : undefined} />}
 
