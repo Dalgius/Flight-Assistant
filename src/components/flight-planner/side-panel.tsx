@@ -1,3 +1,4 @@
+
 "use client";
 
 import { X } from 'lucide-react';
@@ -24,7 +25,7 @@ const panelConfig = {
   settings: { title: 'Flight Settings', component: SettingsPanel },
   waypoints: { title: 'Waypoints & Actions', component: WaypointsPanel },
   pois: { title: 'Points of Interest', component: PoisPanel },
-  missions: { title: 'Automated Missions', component: MissionsPanel },
+  missions: { title: 'Survey Missions', component: MissionsPanel },
   terrain: { title: 'Terrain Tools', component: TerrainPanel },
   file: { title: 'File Operations', component: FilePanel },
   stats: { title: 'Flight Statistics', component: StatsPanel },
