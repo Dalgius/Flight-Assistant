@@ -1,11 +1,12 @@
+
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 const OPENTOPODATA_API_BASE = 'https://api.opentopodata.org/v1/srtm90m';
 
 export async function GET(request: NextRequest) {
-    const { searchParams } = new URL(request.url);
-    const locations = searchParams.get('locations');
+    // A more robust way to get search params on different platforms
+    const locations = request.nextUrl.searchParams.get('locations');
 
     if (!locations) {
         return NextResponse.json({ error: 'Missing "locations" query parameter.' }, { status: 400 });
@@ -17,9 +18,9 @@ export async function GET(request: NextRequest) {
         const res = await fetch(targetUrl, {
             method: 'GET',
             headers: {
-                'Content-Type': 'application/json',
+                'Accept': 'application/json', // Use Accept header for GET requests
             },
-            signal: AbortSignal.timeout(10000), // 10 seconds timeout
+            signal: AbortSignal.timeout(15000), // Increased timeout to 15 seconds
         });
 
         if (!res.ok) {
