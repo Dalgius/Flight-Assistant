@@ -89,6 +89,9 @@ export const translations: Translations = {
         "missionTypeGrid": "Grid Mission",
         "missionTypeFacade": "Facade Mission",
         "missionWaypointCount": "{count} WPs",
+        "missionNameGrid": "Survey Grid {id}",
+        "missionNameFacade": "Facade Scan {id}",
+        "missionNameOrbit": "Orbit {name}",
         
         // Terrain Panel
         "takeoffPointTitle": "Takeoff Point",
@@ -322,6 +325,9 @@ export const translations: Translations = {
         "missionTypeGrid": "Missione Griglia",
         "missionTypeFacade": "Missione Facciata",
         "missionWaypointCount": "{count} WP",
+        "missionNameGrid": "Griglia di Rilievo {id}",
+        "missionNameFacade": "Scansione Facciata {id}",
+        "missionNameOrbit": "Orbita {name}",
 
         // Terrain Panel
         "takeoffPointTitle": "Punto di Decollo",
