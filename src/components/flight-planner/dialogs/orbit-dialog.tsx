@@ -65,7 +65,7 @@ export function OrbitDialog({ open, onOpenChange, pois, params, onParamsChange, 
             {t('orbitDesc')}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 px-1">
           <div className="space-y-2">
             <Label htmlFor="orbitPoi">{t('centerPoi')}</Label>
             <Select 
