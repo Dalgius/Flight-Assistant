@@ -51,7 +51,7 @@ export function FacadeScanDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
             <DialogHeader>
             <DialogTitle>{isEditing ? t('editFacadeScanTitle') : t('createFacadeScanTitle')}</DialogTitle>
             <DialogDescription>
@@ -59,7 +59,7 @@ export function FacadeScanDialog({
             </DialogDescription>
             </DialogHeader>
             <ScrollArea className="max-h-[60vh] pr-6">
-                <div className="space-y-4 py-4">
+                <div className="space-y-4 py-4 px-1">
                 <div className="space-y-2">
                     <Label>{t('scanSideLabel')}</Label>
                     <RadioGroup 
