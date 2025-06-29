@@ -1,452 +1,1061 @@
 
 "use client";
 
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import 'leaflet-geometryutil';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, ScaleControl, Polyline, Marker, useMap, useMapEvents, Popup } from 'react-leaflet';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import type { Waypoint, POI, LatLng, DrawingState, FlightPlanSettings } from './types';
-import { calculateBearing, createSmoothPath } from '@/lib/flight-plan-calcs';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import dynamic from 'next/dynamic';
+import { useToast } from '@/hooks/use-toast';
+import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData, SurveyMission, FlightPlan } from '@/components/flight-planner/types';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints, getElevationsBatch, validateFlightPlanForImport, validateFlightPlanForWpml, calculateMissionDuration, calculateMissionDistance } from '@/lib/flight-plan-calcs';
+import JSZip from 'jszip';
 
-// Fix for default Leaflet icon path issue with bundlers
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+import { ActionBar } from '@/components/flight-planner/action-bar';
+import { SidePanel } from '@/components/flight-planner/side-panel';
+import { OrbitDialog } from '@/components/flight-planner/dialogs/orbit-dialog';
+import { SurveyGridDialog } from '@/components/flight-planner/dialogs/survey-grid-dialog';
+import { FacadeScanDialog } from '@/components/flight-planner/dialogs/facade-scan-dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { TranslationProvider, useTranslation } from '@/hooks/use-translation';
 
 
-const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: DrawingState; onMapClick: (latlng: LatLng, event: any) => void; }) => {
-    const map = useMap();
-
-    // Drawing states
-    const [radiusLinePoints, setRadiusLinePoints] = useState<LatLng[] | null>(null);
-    const [surveyPolygonPoints, setSurveyPolygonPoints] = useState<LatLng[]>([]);
-    const [angleLinePoints, setAngleLinePoints] = useState<LatLng[] | null>(null);
-    const [facadeLinePoints, setFacadeLinePoints] = useState<LatLng[] | null>(null);
-
-    useEffect(() => {
-        // Reset all drawing states when mode changes
-        setRadiusLinePoints(null);
-        setSurveyPolygonPoints([]);
-        setAngleLinePoints(null);
-        setFacadeLinePoints(null);
-
-        if (drawingState.mode) {
-            map.getContainer().style.cursor = 'crosshair';
-        } else {
-            map.getContainer().style.cursor = '';
-        }
-
-        return () => { map.getContainer().style.cursor = ''; }
-    }, [drawingState.mode, map]);
-
-    useMapEvents({
-        click(e) {
-            if (drawingState.mode === 'surveyArea') {
-                const newPoints = [...surveyPolygonPoints, e.latlng];
-                const clickTolerance = map.getZoom() > 15 ? 20 / (map.getZoom() - 14) : 20;
-                if (surveyPolygonPoints.length >= 3 && L.latLng(e.latlng).distanceTo(L.latLng(surveyPolygonPoints[0])) < clickTolerance ) {
-                    drawingState.onComplete(surveyPolygonPoints); 
-                    setSurveyPolygonPoints([]);
-                    return;
-                }
-                setSurveyPolygonPoints(newPoints);
-            } else if (drawingState.mode === null) {
-                onMapClick(e.latlng, e);
-            }
-        },
-        mousedown(e) {
-            if (drawingState.mode === 'orbitRadius' && drawingState.center) {
-                map.dragging.disable();
-                setRadiusLinePoints([drawingState.center, e.latlng]);
-            } else if (drawingState.mode === 'surveyAngle') {
-                map.dragging.disable();
-                setAngleLinePoints([e.latlng, e.latlng]);
-            } else if (drawingState.mode === 'facadeLine') {
-                map.dragging.disable();
-                setFacadeLinePoints([e.latlng, e.latlng]);
-            }
-        },
-        mousemove(e) {
-            if (radiusLinePoints) {
-                setRadiusLinePoints([radiusLinePoints[0], e.latlng]);
-            } else if (angleLinePoints) {
-                setAngleLinePoints([angleLinePoints[0], e.latlng]);
-            } else if (facadeLinePoints) {
-                setFacadeLinePoints([facadeLinePoints[0], e.latlng]);
-            }
-        },
-        mouseup(e) {
-            if (radiusLinePoints) {
-                map.dragging.enable();
-                const radius = L.latLng(radiusLinePoints[0]).distanceTo(e.latlng);
-                drawingState.onComplete(radius);
-                setRadiusLinePoints(null);
-            } else if (angleLinePoints) {
-                map.dragging.enable();
-                const angle = calculateBearing(angleLinePoints[0], e.latlng);
-                drawingState.onComplete(angle);
-                setAngleLinePoints(null);
-            } else if (facadeLinePoints) {
-                map.dragging.enable();
-                drawingState.onComplete({ start: facadeLinePoints[0], end: e.latlng });
-                setFacadeLinePoints(null);
-            }
-        }
-    });
-
-    const vertexMarkers = surveyPolygonPoints.map((p, i) => (
-         <Marker key={`v-${i}`} position={p} icon={L.divIcon({
-            className: 'survey-vertex-marker',
-            html: `<div style="background: ${i === 0 ? '#2ecc71' : '#e74c3c'}; border: 1px solid white; border-radius: 50%; width: 10px; height: 10px;"></div>`,
-            iconSize: [12, 12],
-            iconAnchor: [6, 6]
-        })} />
-    ));
-
-    const polygonPreview = surveyPolygonPoints.length > 1 
-      ? <Polyline positions={surveyPolygonPoints.length > 2 ? [...surveyPolygonPoints, surveyPolygonPoints[0]] : surveyPolygonPoints} color="#1abc9c" weight={2} dashArray="5, 5" />
-      : null;
-
-    return (
-        <>
-            {radiusLinePoints && <Polyline positions={radiusLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
-            {angleLinePoints && <Polyline positions={angleLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
-            {facadeLinePoints && <Polyline positions={facadeLinePoints} color="#1abc9c" weight={3} dashArray="10, 10" />}
-            {polygonPreview}
-            {vertexMarkers}
-        </>
-    );
-};
-
-const MapController = ({ waypoints, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
-    const map = useMap();
-
-    useEffect(() => {
-        // Adjust map size when the side panel opens/closes
-        setTimeout(() => map.invalidateSize(), 310);
-    }, [isPanelOpen, map]);
-
-    useEffect(() => {
-        // Pan to the selected waypoint, but only when the ID changes.
-        // This prevents re-panning when waypoint data is edited.
-        if (selectedWaypointId) {
-            const wp = waypoints.find(w => w.id === selectedWaypointId);
-            if (wp) {
-                map.panTo(wp.latlng);
-            }
-        }
-    }, [selectedWaypointId, map]); // `waypoints` is intentionally omitted to prevent re-panning on data edits.
-
-    return null;
-};
-
-const createWaypointIcon = (waypoint: Waypoint, displayIndex: number, isSelectedSingle: boolean, isMultiSelected: boolean, isHomePoint: boolean, waypoints: Waypoint[], pois: POI[]): L.DivIcon => {
-    let bgColor = '#3498db';
-    let iconHtmlContent = String(displayIndex);
-    let borderStyle = '2px solid white';
-    let classNameSuffix = '';
-    let currentSize = 24;
-    let currentFontSize = 12;
-
-    if (isHomePoint) {
-        bgColor = '#27ae60';
-        iconHtmlContent = '🏠';
-        borderStyle = '2px solid #ffffff';
-        classNameSuffix = 'home-point-wp';
-        currentSize = 28;
-        currentFontSize = 16;
-    } else if (isSelectedSingle) {
-        bgColor = '#e74c3c';
-        classNameSuffix = 'selected-single';
-        currentSize = Math.round(24 * 1.2);
-        currentFontSize = Math.round(12 * 1.2);
-        if (isMultiSelected) {
-            borderStyle = '3px solid #f39c12';
-        }
-    } else if (isMultiSelected) {
-        bgColor = '#f39c12';
-        classNameSuffix = 'selected-multi';
-        currentSize = Math.round(24 * 1.1);
-        currentFontSize = Math.round(12 * 1.1);
-        borderStyle = '2px solid #ffeb3b';
-    }
-
-    currentSize = Math.round(currentSize);
-    currentFontSize = Math.round(currentFontSize);
-
-    let headingAngleDeg = 0;
-    let arrowColor = 'transparent';
-    const wpIndex = waypoints.findIndex(w => w.id === waypoint.id);
-
-    if (waypoint.headingControl === 'auto') {
-        arrowColor = '#3498db';
-        if (wpIndex < waypoints.length - 1) {
-            headingAngleDeg = calculateBearing(waypoint.latlng, waypoints[wpIndex + 1].latlng);
-        } else if (wpIndex > 0) {
-            headingAngleDeg = calculateBearing(waypoints[wpIndex - 1].latlng, waypoint.latlng);
-        } else {
-            arrowColor = 'transparent';
-        }
-    } else if (waypoint.headingControl === 'fixed') {
-        headingAngleDeg = waypoint.fixedHeading;
-        arrowColor = '#607d8b';
-    } else if (waypoint.headingControl === 'poi_track' && waypoint.targetPoiId !== null) {
-        const targetPoi = pois.find(p => p.id === waypoint.targetPoiId);
-        if (targetPoi) {
-            headingAngleDeg = calculateBearing(waypoint.latlng, targetPoi.latlng);
-            arrowColor = '#4CAF50';
-        } else {
-            arrowColor = 'transparent';
-        }
-    }
-
-    let headingIndicatorSvg = '';
-    if (arrowColor !== 'transparent') {
-        const circleRadius = currentSize / 2;
-        const arrowheadLength = 8;
-        const arrowheadWidth = 7;
-        const gapFromCircle = 2;
-        const arrowBaseY = -(circleRadius + gapFromCircle);
-        const arrowTipY = -(circleRadius + gapFromCircle + arrowheadLength);
-        const baseCornerOffsetX = arrowheadWidth / 2;
-        const polygonPoints = `${baseCornerOffsetX},${arrowBaseY} ${-baseCornerOffsetX},${arrowBaseY} 0,${arrowTipY}`;
-        const maxArrowExtent = circleRadius + gapFromCircle + arrowheadLength;
-        const svgContainerSize = maxArrowExtent * 2 + arrowheadWidth;
-        const svgCenterX = svgContainerSize / 2;
-        const svgCenterY = svgContainerSize / 2;
-
-        headingIndicatorSvg = `
-            <svg width="${svgContainerSize}" height="${svgContainerSize}" 
-                 style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); overflow: visible; z-index: 5;">
-                <g transform="translate(${svgCenterX}, ${svgCenterY}) rotate(${headingAngleDeg})">
-                    <polygon points="${polygonPoints}" fill="${arrowColor}"/>
-                </g>
-            </svg>
-        `;
-    }
-
-    return L.divIcon({
-        className: `waypoint-marker ${classNameSuffix}`,
-        html: `
-            <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
-                <div style="background: ${bgColor}; color: white; border-radius: 50%; width: ${currentSize}px; height: ${currentSize}px; display: flex; align-items: center; justify-content: center; font-size: ${currentFontSize}px; font-weight: bold; border: ${borderStyle}; box-shadow: 0 2px 4px rgba(0,0,0,0.3); line-height: ${currentSize}px; position: relative; z-index: 10;">
-                    ${iconHtmlContent}
-                </div>
-                ${headingIndicatorSvg}
-            </div>`,
-        iconSize: [currentSize, currentSize],
-        iconAnchor: [currentSize / 2, currentSize / 2],
-    });
-};
-
-const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isSelected, isMultiSelected, onClick, onDragEnd }: any) => {
-    const markerRef = useRef<L.Marker>(null);
-    const isHome = waypoints[0]?.id === waypoint.id;
-
-    const icon = useMemo(() => createWaypointIcon(waypoint, displayIndex, isSelected, isMultiSelected, isHome, waypoints, pois), 
-        [waypoint, displayIndex, isSelected, isMultiSelected, isHome, waypoints, pois]);
-    
-    const zIndexOffset = isHome ? 1500 : (isSelected ? 1000 : (isMultiSelected ? 500 : 0));
-
-    const eventHandlers = useMemo(
-        () => ({
-            dragend() {
-                const marker = markerRef.current;
-                if (marker != null) {
-                    onDragEnd(waypoint.id, { latlng: (marker as L.Marker).getLatLng() });
-                }
-            },
-            click() {
-                onClick(waypoint.id);
-            },
-            mouseover: (e: L.LeafletMouseEvent) => {
-                e.target.openPopup();
-            },
-            mouseout: (e: L.LeafletMouseEvent) => {
-                e.target.closePopup();
-            },
-        }),
-        [waypoint.id, onDragEnd, onClick]
-    );
-
-    const homeElevation = settings?.homeElevationMsl ?? 0;
-    const altitudeRelToHome = waypoint.altitude;
-    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(1)} m`;
-    const aglText = waypoint.terrainElevationMSL !== null ? `${((homeElevation + altitudeRelToHome) - waypoint.terrainElevationMSL).toFixed(1)}m` : "N/A";
-    const terrainElevText = waypoint.terrainElevationMSL !== null ? `${waypoint.terrainElevationMSL.toFixed(1)}m` : "N/A";
-
-    return (
-        <Marker
-            ref={markerRef}
-            position={waypoint.latlng}
-            icon={icon}
-            draggable={true}
-            eventHandlers={eventHandlers}
-            zIndexOffset={zIndexOffset}
-        >
-            <Popup autoPan={false}>
-                <div className="text-xs leading-snug">
-                    <strong className="text-sm">Waypoint {displayIndex}</strong><br />
-                    Lat: {waypoint.latlng.lat.toFixed(5)}, Lng: {waypoint.latlng.lng.toFixed(5)}<br />
-                    Flight Alt (Rel): {altitudeRelToHome} m<br />
-                    AMSL Alt: {amslText}<br />
-                    AGL Alt: {aglText}<br />
-                    Terrain Elev: {terrainElevText}<br />
-                    Gimbal: {waypoint.gimbalPitch}° | Hover: {waypoint.hoverTime}s
-                </div>
-            </Popup>
-        </Marker>
-    );
-};
-
-const PoiMarker = ({ poi, onClick, onDragEnd }: any) => {
-    const markerRef = useRef(null);
-
-    const icon = L.divIcon({
-        className: 'poi-marker',
-        html: `<div style="background: #f39c12; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3);">🎯</div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
-    });
-    
-    const eventHandlers = useMemo(() => ({
-        click() {
-            // POI selection logic can be added here
-        }
-    }), [poi.id, onClick]);
-
-    return <Marker ref={markerRef} position={poi.latlng} icon={icon} eventHandlers={eventHandlers} />;
-};
-
-
-interface MapViewProps {
-  isPanelOpen: boolean;
-  waypoints: Waypoint[];
-  pois: POI[];
-  pathType: 'straight' | 'curved';
-  altitudeAdaptationMode: FlightPlanSettings['altitudeAdaptationMode'];
-  settings: FlightPlanSettings;
-  selectedWaypointId: number | null;
-  multiSelectedWaypointIds: Set<number>;
-  drawingState: DrawingState;
-  onMapClick: (latlng: LatLng, event: any) => void;
-  onMarkerClick: (id: number) => void;
-  onMarkerDragEnd: (id: number, updates: Partial<Waypoint>) => void;
-}
-
-const satelliteLayer = {
-  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  attribution: 'Tiles &copy; Esri',
-  maxZoom: 25,
-  maxNativeZoom: 21,
-};
-
-const defaultLayer = {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 22,
-  maxNativeZoom: 19,
-};
-
-export function MapView(props: MapViewProps) {
-  const { isPanelOpen, waypoints, pois, pathType, altitudeAdaptationMode, settings, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
-  const [isSatelliteView, setIsSatelliteView] = useState(false);
-  const mapRef = useRef<L.Map>(null);
-
-  const toggleSatellite = () => setIsSatelliteView(prev => !prev);
-  const currentLayer = isSatelliteView ? satelliteLayer : defaultLayer;
-
-  const pathCoords = useMemo(() => {
-    if (waypoints.length < 2) return [];
-    const points = waypoints.map(wp => wp.latlng);
-    if (pathType === 'curved') {
-        return createSmoothPath(points);
-    }
-    return points;
-  }, [waypoints, pathType]);
-
-  const pathOptions = useMemo(() => {
-    const color = (() => {
-        switch (altitudeAdaptationMode) {
-            case 'agl': return '#27ae60'; // Green
-            case 'amsl': return '#e67e22'; // Orange
-            default: return '#3498db'; // Blue
-        }
-    })();
-    return {
-        color: color,
-        weight: 3,
-        dashArray: pathType === 'straight' ? '5, 5' : undefined,
-    };
-  }, [altitudeAdaptationMode, pathType]);
+function FlightPlannerUI() {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const [activePanel, setActivePanel] = useState<PanelType | null>('waypoints');
+  const [activeDialog, setActiveDialog] = useState<DialogType>(null);
   
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
+  const [pois, setPois] = useState<POI[]>([]);
+  const [missions, setMissions] = useState<SurveyMission[]>([]);
+  const [settings, setSettings] = useState<FlightPlanSettings>({
+    defaultAltitude: 50,
+    flightSpeed: 2.5,
+    pathType: 'curved',
+    homeElevationMsl: 0,
+    altitudeAdaptationMode: 'relative',
+    desiredAGL: 50,
+    desiredAMSL: 100,
+  });
+  
+  const [selectedWaypointId, setSelectedWaypointId] = useState<number | null>(null);
+  const [multiSelectedWaypointIds, setMultiSelectedWaypointIds] = useState<Set<number>>(new Set());
+  
+  const [waypointCounter, setWaypointCounter] = useState(1);
+  const [poiCounter, setPoiCounter] = useState(1);
+  const [missionCounter, setMissionCounter] = useState(1);
+
+  const [editingMissionId, setEditingMissionId] = useState<number | null>(null);
+
+  const [poiName, setPoiName] = useState('');
+  const [poiHeight, setPoiHeight] = useState(0);
+
+  const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
+  const [surveyParams, setSurveyParams] = useState<SurveyGridParams>({
+    altitude: 50, sidelap: 70, frontlap: 80, angle: 0, polygon: [],
+  });
+  const [facadeParams, setFacadeParams] = useState<FacadeScanParams>({
+    side: 'left', distance: 10, minHeight: 5, maxHeight: 20,
+    horizontalOverlap: 80, verticalOverlap: 70, gimbalPitch: 0
+  });
+
+  const [facadeLine, setFacadeLine] = useState<{start: LatLng, end: LatLng} | null>(null);
+  
+  const [drawingState, setDrawingState] = useState<DrawingState>({ mode: null, onComplete: () => {} });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const MapView = useMemo(() => dynamic(() => import('@/components/flight-planner/map-view').then(mod => mod.MapView), { 
+    ssr: false,
+    loading: () => <Skeleton className="h-full w-full bg-secondary" />
+  }), []);
+
+  const handlePanelChange = (panel: PanelType) => {
+    setActivePanel(currentPanel => (currentPanel === panel ? null : panel));
+  };
+
+  const handleOpenDialog = (dialog: DialogType) => {
+    if (dialog === 'orbit' && pois.length > 0) {
+        const validPoiSelected = pois.some(p => String(p.id) === orbitParams.poiId);
+        if (!validPoiSelected) {
+            setOrbitParams(prev => ({ ...prev, poiId: String(pois[0].id) }));
+        }
+    }
+    setActiveDialog(dialog);
+  };
+  
+  const updateSettings = useCallback((newSettings: Partial<FlightPlanSettings>) => {
+    setSettings(prev => ({ ...prev, ...newSettings }));
+  }, []);
+
+  useEffect(() => {
+    const suggestedAMSL = settings.homeElevationMsl + settings.defaultAltitude;
+    if (Math.round(suggestedAMSL) !== settings.desiredAMSL) {
+      updateSettings({ desiredAMSL: Math.round(suggestedAMSL) });
+    }
+  }, [settings.homeElevationMsl, settings.defaultAltitude, settings.desiredAMSL, updateSettings]);
+
+  const addWaypoint = useCallback(async (latlng: LatLng, options: Partial<Waypoint> & { isFromImport?: boolean } = {}) => {
+    const isFirstWaypoint = waypoints.length === 0;
+    let terrainElevation: number | null = null;
+    
+    if (isFirstWaypoint && !options.isFromImport) {
+      toast({ title: t('fetchingElevation'), description: t('gettingTakeoffElevation') });
+      const elevations = await getElevationsBatch([latlng]);
+      if (elevations && elevations.length > 0 && elevations[0] !== null) {
+        terrainElevation = Math.round(elevations[0]);
+        setSettings(prev => ({
+          ...prev,
+          homeElevationMsl: terrainElevation!,
+          altitudeAdaptationMode: 'relative'
+        }));
+        toast({ title: t('successTitle'), description: t('takeoffElevationSuccess', { elev: terrainElevation }) });
+      } else {
+        toast({ variant: "destructive", title: t('warning'), description: t('takeoffElevationFailure') });
+      }
+    }
+
+    const newWaypoint: Waypoint = {
+        id: options.id ?? waypointCounter,
+        latlng: latlng,
+        altitude: options.altitude ?? settings.defaultAltitude,
+        hoverTime: options.hoverTime ?? 0,
+        gimbalPitch: options.gimbalPitch ?? 0,
+        headingControl: options.headingControl || 'auto',
+        fixedHeading: options.fixedHeading || 0,
+        cameraAction: options.cameraAction || 'none',
+        targetPoiId: options.targetPoiId || null,
+        terrainElevationMSL: options.terrainElevationMSL ?? terrainElevation,
+        waypointType: options.waypointType || 'generic' 
+    };
+    setWaypoints(prev => [...prev, newWaypoint]);
+    if (!options.isFromImport) {
+      setWaypointCounter(prev => prev + 1);
+      selectWaypoint(newWaypoint.id);
+    }
+  }, [settings, waypointCounter, waypoints.length, toast, t]);
+
+  const updateWaypoint = useCallback(async (id: number, updates: Partial<Waypoint>) => {
+    let homeElevationUpdate: Partial<FlightPlanSettings> | null = null;
+    
+    const isFirstWaypoint = waypoints.length > 0 && waypoints[0].id === id;
+
+    if (isFirstWaypoint && updates.latlng) {
+      const elevations = await getElevationsBatch([updates.latlng]);
+      if (elevations && elevations.length > 0 && elevations[0] !== null) {
+        const homeElev = Math.round(elevations[0]);
+        homeElevationUpdate = { homeElevationMsl: homeElev, altitudeAdaptationMode: 'relative' };
+        updates.terrainElevationMSL = homeElev;
+      }
+    }
+
+    setWaypoints(prev => prev.map(wp => wp.id === id ? { ...wp, ...updates } : wp));
+    
+    if (homeElevationUpdate) {
+        setSettings(prev => ({...prev, ...homeElevationUpdate}));
+    }
+  }, [waypoints]);
+
+  const deleteWaypoint = useCallback((id: number) => {
+    setWaypoints(prev => prev.filter(wp => wp.id !== id));
+    if (selectedWaypointId === id) {
+        setSelectedWaypointId(null);
+    }
+    setMultiSelectedWaypointIds(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(id);
+      return newSet;
+    });
+  }, [selectedWaypointId]);
+
+  const deleteMultiSelectedWaypoints = useCallback(() => {
+    if (multiSelectedWaypointIds.size === 0) return;
+    const count = multiSelectedWaypointIds.size;
+    
+    setWaypoints(prev => prev.filter(wp => !multiSelectedWaypointIds.has(wp.id)));
+    setMultiSelectedWaypointIds(new Set());
+    
+    toast({
+      title: t('waypointsDeleted'),
+      description: t('waypointsRemoved', { count })
+    });
+  }, [multiSelectedWaypointIds, toast, t]);
+
+  const selectWaypoint = useCallback((id: number | null) => {
+    if (multiSelectedWaypointIds.size > 0) {
+      setMultiSelectedWaypointIds(new Set());
+    }
+    setSelectedWaypointId(id);
+  }, [multiSelectedWaypointIds]);
+
+  const toggleMultiSelectWaypoint = useCallback((id: number) => {
+    setSelectedWaypointId(null);
+    setMultiSelectedWaypointIds(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
+        }
+        return newSet;
+    });
+  }, []);
+
+  const clearMultiSelection = useCallback(() => {
+    setMultiSelectedWaypointIds(new Set());
+  }, []);
+
+  const selectAllWaypoints = useCallback(() => {
+    if (waypoints.length === multiSelectedWaypointIds.size) {
+        setMultiSelectedWaypointIds(new Set());
+    } else {
+        setMultiSelectedWaypointIds(new Set(waypoints.map(wp => wp.id)));
+    }
+    setSelectedWaypointId(null);
+  }, [waypoints, multiSelectedWaypointIds.size]);
+
+  const clearWaypoints = useCallback(() => {
+    setWaypoints([]);
+    setPois([]);
+    setMissions([]);
+    setSelectedWaypointId(null);
+    setMultiSelectedWaypointIds(new Set());
+    setWaypointCounter(1);
+    setPoiCounter(1);
+    setMissionCounter(1);
+    toast({ title: t('missionCleared'), description: t('allCleared') });
+  }, [toast, t]);
+
+  const addPoi = useCallback(async (latlng: LatLng, name: string, objectHeight: number, options: Partial<POI> & { isFromImport?: boolean } = {}) => {
+    const newPoi: POI = {
+        id: options.id ?? poiCounter,
+        name: name || `POI ${options.id ?? poiCounter}`,
+        latlng,
+        objectHeightAboveGround: objectHeight,
+        terrainElevationMSL: options.terrainElevationMSL ?? null,
+        altitude: (options.terrainElevationMSL ?? 0) + objectHeight,
+    };
+    
+    if (!options.isFromImport && newPoi.terrainElevationMSL === null) {
+      const elevations = await getElevationsBatch([latlng]);
+      if (elevations && elevations.length > 0 && elevations[0] !== null) {
+        newPoi.terrainElevationMSL = elevations[0];
+        newPoi.altitude = newPoi.terrainElevationMSL + newPoi.objectHeightAboveGround;
+      } else {
+        toast({ variant: "destructive", title: t('warning'), description: t('poiElevationFailure', { name: newPoi.name }) });
+      }
+    }
+
+    setPois(prev => [...prev, newPoi]);
+    if (!options.isFromImport) {
+        setPoiCounter(prev => prev + 1);
+    }
+  }, [poiCounter, toast, t]);
+  
+  // Decoupled POI update logic. This useEffect will run after `pois` state is updated.
+  useEffect(() => {
+    setWaypoints(prevWaypoints =>
+      prevWaypoints.map(wp => {
+        if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
+          const targetPoi = pois.find(p => p.id === wp.targetPoiId);
+          if (targetPoi) {
+            const waypointAMSL = settings.homeElevationMsl + wp.altitude;
+            const poiAMSL = targetPoi.altitude;
+            const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
+            const newGimbalPitch = calculateRequiredGimbalPitch(
+              waypointAMSL,
+              poiAMSL,
+              horizontalDistance
+            );
+            // Only create a new object if the pitch actually changes
+            if (wp.gimbalPitch !== newGimbalPitch) {
+              return { ...wp, gimbalPitch: newGimbalPitch };
+            }
+          }
+        }
+        return wp;
+      })
+    );
+  }, [pois, settings.homeElevationMsl, settings.altitudeAdaptationMode]);
+
+  // Refactored updatePoi to only update the POIs state
+  const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
+    setPois(prevPois =>
+      prevPois.map(p => (p.id === id ? { ...p, ...updates } : p))
+    );
+  }, []);
+
+  const deletePoi = useCallback((id: number) => {
+    setPois(prev => prev.filter(p => p.id !== id));
+    setWaypoints(prev => prev.map(wp => wp.targetPoiId === id ? {...wp, targetPoiId: null} : wp));
+  }, []);
+
+  const deleteMission = useCallback((missionId: number) => {
+    const missionToDelete = missions.find(m => m.id === missionId);
+    if (!missionToDelete) return;
+
+    const waypointIdsToDelete = new Set(missionToDelete.waypointIds);
+    setWaypoints(prev => prev.filter(wp => !waypointIdsToDelete.has(wp.id)));
+    setMissions(prev => prev.filter(m => m.id !== missionId));
+
+    toast({
+        title: t('missionDeleted'),
+        description: t('missionDeletedToast', {name: missionToDelete.name, count: missionToDelete.waypointIds.length})
+    });
+  }, [missions, toast, t]);
+
+  const handleEditMission = useCallback((missionId: number) => {
+    const mission = missions.find(m => m.id === missionId);
+    if (!mission) return;
+
+    setEditingMissionId(missionId);
+
+    if (mission.type === 'Grid' && mission.parameters) {
+      setSurveyParams({ ...(mission.parameters as Omit<SurveyGridParams, 'polygon'>), polygon: mission.polygon || [] });
+      setActiveDialog('survey');
+    } else if (mission.type === 'Facade' && mission.parameters) {
+      setFacadeParams(mission.parameters as FacadeScanParams);
+      if (mission.line) {
+        setFacadeLine(mission.line);
+      }
+      setActiveDialog('facade');
+    } else if (mission.type === 'Orbit' && mission.parameters) {
+      const params = mission.parameters as { poiId: number, radius: number, numPoints: number };
+      setOrbitParams({
+          poiId: String(params.poiId),
+          radius: params.radius,
+          numPoints: params.numPoints,
+      });
+      setActiveDialog('orbit');
+    }
+  }, [missions]);
+
+  const handleSaveOrbit = useCallback(() => {
+    const { poiId, radius, numPoints } = orbitParams;
+    const centerPoi = pois.find(p => p.id === parseInt(poiId));
+    if (!centerPoi) {
+      toast({ variant: "destructive", title: t('error'), description: t('poiNotFound') });
+      return;
+    }
+
+    const altitudeRelToHome = settings.defaultAltitude;
+    const homeElevation = settings.homeElevationMsl;
+    const orbitWpAMSL = homeElevation + altitudeRelToHome;
+    
+    const poiAMSL = centerPoi.altitude; 
+
+    const calculatedGimbalPitch = calculateRequiredGimbalPitch(orbitWpAMSL, poiAMSL, radius);
+
+    let currentWpCounter = waypointCounter;
+    const newWaypoints: Waypoint[] = [];
+    for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * 2 * Math.PI;
+        const latRad = toRad(centerPoi.latlng.lat);
+        const lngRad = toRad(centerPoi.latlng.lng);
+
+        const pointLatRad = Math.asin(Math.sin(latRad) * Math.cos(radius / R_EARTH) +
+                                    Math.cos(latRad) * Math.sin(radius / R_EARTH) * Math.cos(angle));
+        const pointLngRad = lngRad + Math.atan2(Math.sin(angle) * Math.sin(radius / R_EARTH) * Math.cos(latRad),
+                                             Math.cos(radius / R_EARTH) - Math.sin(latRad) * Math.sin(pointLatRad));
+        
+        const newLat = pointLatRad * 180 / Math.PI;
+        const newLng = pointLngRad * 180 / Math.PI;
+
+        const newWaypoint: Waypoint = {
+            id: currentWpCounter++,
+            latlng: { lat: newLat, lng: newLng },
+            altitude: altitudeRelToHome, 
+            headingControl: 'poi_track', 
+            targetPoiId: centerPoi.id,
+            gimbalPitch: calculatedGimbalPitch,
+            waypointType: 'orbit',
+            hoverTime: 0,
+            fixedHeading: 0,
+            cameraAction: 'none',
+            terrainElevationMSL: null,
+        };
+        newWaypoints.push(newWaypoint);
+    }
+    
+    const missionName = t('missionNameOrbit', { name: centerPoi.name });
+
+    if (editingMissionId) {
+        const missionToUpdate = missions.find(m => m.id === editingMissionId);
+        if (!missionToUpdate) return;
+        
+        const oldWaypointIds = new Set(missionToUpdate.waypointIds);
+        const updatedMission: SurveyMission = {
+            ...missionToUpdate,
+            name: missionName,
+            parameters: { poiId: centerPoi.id, radius, numPoints },
+            waypointIds: newWaypoints.map(wp => wp.id),
+        };
+
+        setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
+        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        toast({ title: t('orbitUpdated'), description: t('orbitUpdatedSuccess', { numPoints: newWaypoints.length, poiName: centerPoi.name }) });
+    } else {
+        const newMission: SurveyMission = {
+            id: missionCounter,
+            name: missionName,
+            type: 'Orbit',
+            waypointIds: newWaypoints.map(wp => wp.id),
+            parameters: { poiId: centerPoi.id, radius, numPoints },
+        };
+        setMissions(prev => [...prev, newMission]);
+        setMissionCounter(prev => prev + 1);
+        setWaypoints(prev => [...prev, ...newWaypoints]);
+        toast({ title: t('orbitCreated'), description: t('orbitCreatedSuccess', { numPoints, poiName: centerPoi.name }) });
+    }
+
+    setWaypointCounter(currentWpCounter);
+    setActiveDialog(null);
+    setEditingMissionId(null);
+
+  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter, editingMissionId, missions, t]);
+
+  const handleCreateSurveyGrid = useCallback(() => {
+    const { polygon, altitude, sidelap, frontlap, angle } = surveyParams;
+    if (!polygon || polygon.length < 3) {
+        toast({ variant: "destructive", title: t('invalidArea'), description: t('invalidAreaDesc') });
+        return;
+    }
+
+    const waypointsData = generateSurveyGridWaypoints(polygon, { altitude, sidelap, frontlap, angle });
+
+    if (waypointsData.length === 0) {
+        toast({ variant: "destructive", title: t('noWaypointsGenerated'), description: t('noWaypointsGeneratedDesc') });
+        return;
+    }
+
+    let currentWpCounter = waypointCounter;
+    const newWaypoints: Waypoint[] = waypointsData.map((wpData: GeneratedWaypointData) => {
+        const newWp: Waypoint = {
+            id: currentWpCounter++,
+            latlng: wpData.latlng,
+            ...wpData.options,
+            hoverTime: 0,
+            targetPoiId: null,
+            terrainElevationMSL: null,
+        };
+        return newWp;
+    });
+
+    if (editingMissionId) {
+        const missionToUpdate = missions.find(m => m.id === editingMissionId);
+        if (!missionToUpdate) return;
+        
+        const oldWaypointIds = new Set(missionToUpdate.waypointIds);
+
+        const updatedMission: SurveyMission = {
+            ...missionToUpdate,
+            parameters: { altitude, sidelap, frontlap, angle },
+            polygon: polygon,
+            waypointIds: newWaypoints.map(wp => wp.id),
+        };
+
+        setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
+        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        toast({ title: t('surveyGridUpdated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
+    } else {
+        const newMission: SurveyMission = {
+            id: missionCounter,
+            name: t('missionNameGrid', { id: missionCounter }),
+            type: 'Grid',
+            waypointIds: newWaypoints.map(wp => wp.id),
+            parameters: { altitude, sidelap, frontlap, angle },
+            polygon: polygon,
+        };
+        setMissions(prev => [...prev, newMission]);
+        setMissionCounter(prev => prev + 1);
+        setWaypoints(prev => [...prev, ...newWaypoints]);
+        toast({ title: t('surveyGridCreated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
+    }
+
+    setWaypointCounter(currentWpCounter);
+    setActiveDialog(null);
+    setEditingMissionId(null);
+    setSurveyParams(prev => ({...prev, polygon: []}));
+
+}, [surveyParams, toast, waypointCounter, missionCounter, editingMissionId, missions, t]);
+
+const handleGenerateFacadeScan = useCallback(() => {
+    if (!facadeLine) {
+        toast({ variant: "destructive", title: t('error'), description: t('facadeLineNotDefined') });
+        return;
+    }
+
+    const waypointsData = generateFacadeWaypoints(facadeLine.start, facadeLine.end, facadeParams);
+    
+    if (waypointsData.length === 0) {
+        toast({ variant: "destructive", title: t('noWaypointsGenerated'), description: t('noWaypointsGeneratedDesc') });
+        return;
+    }
+    
+    let currentWpCounter = waypointCounter;
+    const newWaypoints: Waypoint[] = waypointsData.map((wpData: GeneratedWaypointData) => {
+        const newWp: Waypoint = {
+            id: currentWpCounter++,
+            latlng: wpData.latlng,
+            ...wpData.options,
+            hoverTime: 0,
+            targetPoiId: null,
+            terrainElevationMSL: null,
+        };
+        return newWp;
+    });
+
+    if (editingMissionId) {
+        const missionToUpdate = missions.find(m => m.id === editingMissionId);
+        if (!missionToUpdate) return;
+        const oldWaypointIds = new Set(missionToUpdate.waypointIds);
+        
+        const updatedMission: SurveyMission = {
+            ...missionToUpdate,
+            parameters: facadeParams,
+            line: facadeLine,
+            waypointIds: newWaypoints.map(wp => wp.id),
+        };
+        setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
+        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        toast({ title: t('facadeScanUpdated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
+
+    } else {
+        const newMission: SurveyMission = {
+            id: missionCounter,
+            name: t('missionNameFacade', { id: missionCounter }),
+            type: 'Facade',
+            waypointIds: newWaypoints.map(wp => wp.id),
+            parameters: facadeParams,
+            line: facadeLine,
+        };
+        setMissions(prev => [...prev, newMission]);
+        setMissionCounter(prev => prev + 1);
+        setWaypoints(prev => [...prev, ...newWaypoints]);
+        toast({ title: t('facadeScanCreated'), description: t('surveyGridCreatedSuccess', { count: waypointsData.length }) });
+    }
+
+    setWaypointCounter(currentWpCounter);
+    setActiveDialog(null);
+    setEditingMissionId(null);
+    setFacadeLine(null);
+}, [facadeLine, facadeParams, waypointCounter, toast, missionCounter, editingMissionId, missions, t]);
+
+  const handleDrawRadiusRequest = useCallback(() => {
+    const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
+    if (!centerPoi) return;
+    
+    setActiveDialog(null);
+    
+    setDrawingState({
+      mode: 'orbitRadius',
+      center: centerPoi.latlng,
+      onComplete: (newRadius: number) => {
+        setOrbitParams(prev => ({ ...prev, radius: Math.round(newRadius) }));
+        setDrawingState({ mode: null, onComplete: () => {} });
+        setActiveDialog('orbit');
+      }
+    });
+
+    toast({
+      title: t('drawOrbitRadiusTitle'),
+      description: t('drawOrbitRadiusDesc'),
+    });
+  }, [pois, orbitParams.poiId, toast, t]);
+
+  const handleDrawSurveyAreaRequest = useCallback(() => {
+    setActiveDialog(null);
+    setDrawingState({
+      mode: 'surveyArea',
+      onComplete: (polygon: LatLng[]) => {
+        setSurveyParams(prev => ({...prev, polygon}));
+        setDrawingState({ mode: null, onComplete: () => {} });
+        setActiveDialog('survey');
+        toast({
+          title: t('surveyAreaDefined'),
+          description: t('surveyAreaDefinedDescToast', { points: polygon.length }),
+        });
+      },
+    });
+    toast({
+      title: t('drawSurveyAreaTitle'),
+      description: t('drawSurveyAreaDesc'),
+    });
+  }, [toast, t]);
+  
+  const handleDrawGridAngleRequest = useCallback(() => {
+    setActiveDialog(null);
+    setDrawingState({
+      mode: 'surveyAngle',
+      onComplete: (angle: number) => {
+        const roundedAngle = Math.round(angle);
+        setSurveyParams(prev => ({ ...prev, angle: roundedAngle }));
+        setDrawingState({ mode: null, onComplete: () => {} });
+        setActiveDialog('survey');
+        toast({
+          title: t('gridAngleSet'),
+          description: t('gridAngleSetDesc', { angle: roundedAngle }),
+        });
+      }
+    });
+    toast({
+      title: t('drawGridAngleTitle'),
+      description: t('drawGridAngleDesc'),
+    });
+  }, [toast, t]);
+
+  const handleDrawFacadeLineRequest = useCallback(() => {
+    setActiveDialog(null);
+    setDrawingState({
+        mode: 'facadeLine',
+        onComplete: (line: {start: LatLng, end: LatLng}) => {
+            setFacadeLine(line);
+            setDrawingState({ mode: null, onComplete: () => {} });
+            setActiveDialog('facade');
+            toast({
+                title: t('facadeLineDrawn'),
+                description: t('facadeLineDrawnDescToast'),
+            });
+        },
+    });
+    toast({
+        title: t('drawFacadeLineTitle'),
+        description: t('drawFacadeLineDesc'),
+    });
+  }, [toast, t]);
+
+  const getHomeElevationFromFirstWaypoint = useCallback(async () => {
+    if (waypoints.length === 0) {
+      toast({ title: t('info'), description: t('addWaypointForElevation') });
+      return;
+    }
+    const firstWp = waypoints[0];
+    toast({ title: t('fetchingElevation'), description: t('fetchingElevationForWp1') });
+    const elevations = await getElevationsBatch([firstWp.latlng]);
+    if (elevations && elevations.length > 0 && elevations[0] !== null) {
+      const homeElev = Math.round(elevations[0]);
+      setSettings(prev => ({
+        ...prev,
+        homeElevationMsl: homeElev,
+        altitudeAdaptationMode: 'relative'
+      }));
+      setWaypoints(prev => prev.map(wp => wp.id === firstWp.id ? { ...wp, terrainElevationMSL: homeElev } : wp));
+      toast({ title: t('successTitle'), description: t('takeoffElevationSuccess', { elev: homeElev }) });
+    } else {
+      toast({ variant: "destructive", title: t('error'), description: t('failedToFetchElevationWp1') });
+    }
+  }, [waypoints, toast, t]);
+
+  const adaptToAGL = useCallback(async () => {
+    if (waypoints.length === 0) {
+      toast({ title: t('info'), description: t('noWaypointsToAdapt') });
+      return;
+    }
+    toast({ title: t('processing'), description: t('fetchingTerrainData') });
+    const locations = waypoints.map(wp => wp.latlng);
+    const elevations = await getElevationsBatch(locations);
+
+    let successCount = 0;
+    const newWaypoints = waypoints.map((wp, index) => {
+      const groundElevation = elevations[index];
+      if (groundElevation !== null) {
+        successCount++;
+        const targetMSL = groundElevation + settings.desiredAGL;
+        const newRelativeAltitude = targetMSL - settings.homeElevationMsl;
+        return {
+          ...wp,
+          altitude: Math.round(newRelativeAltitude),
+          terrainElevationMSL: groundElevation,
+        };
+      }
+      return { ...wp, terrainElevationMSL: null };
+    });
+
+    setWaypoints(newWaypoints);
+    setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'agl' }));
+    if (successCount === waypoints.length && waypoints.length > 0) {
+        toast({ title: t('successTitle'), description: t('adaptAglSuccess') });
+    } else if (successCount > 0) {
+        toast({ title: t('partialSuccess'), description: t('adaptAglPartial', { count: successCount, total: waypoints.length }) });
+    } else {
+        toast({ variant: "destructive", title: t('error'), description: t('adaptAglFailure') });
+    }
+  }, [waypoints, settings.desiredAGL, settings.homeElevationMsl, toast, t]);
+
+  const adaptToAMSL = useCallback(async () => {
+    if (waypoints.length === 0) {
+      toast({ title: t('info'), description: t('noWaypointsToAdapt') });
+      return;
+    }
+    toast({ title: t('processing'), description: t('fetchingTerrainData') });
+    const locations = waypoints.map(wp => wp.latlng);
+    const elevations = await getElevationsBatch(locations);
+    const newWaypoints = waypoints.map((wp, index) => {
+        const newRelativeAltitude = settings.desiredAMSL - settings.homeElevationMsl;
+        return {
+            ...wp,
+            altitude: Math.round(newRelativeAltitude),
+            terrainElevationMSL: elevations[index]
+        };
+    });
+
+    setWaypoints(newWaypoints);
+    setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'amsl' }));
+    toast({ title: t('successTitle'), description: t('adaptAmslSuccess', { amsl: settings.desiredAMSL }) });
+  }, [waypoints, settings.desiredAMSL, settings.homeElevationMsl, toast, t]);
+
+  const triggerImportJson = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result as string;
+        if (!text) throw new Error("File is empty or could not be read.");
+        
+        const plan = JSON.parse(text) as FlightPlan;
+        
+        plan.waypoints.forEach(wp => { if (wp.latlng && !('lat' in wp.latlng)) { wp.latlng = { lat: (wp.latlng as any)._lat, lng: (wp.latlng as any)._lng } } });
+        plan.pois.forEach(p => { if (p.latlng && !('lat' in p.latlng)) { p.latlng = { lat: (p.latlng as any)._lat, lng: (p.latlng as any)._lng } } });
+
+        const errors = validateFlightPlanForImport(plan);
+        if (errors.length > 0) {
+          throw new Error(errors.map(errKey => t(errKey)).join('\n'));
+        }
+        await loadFlightPlan(plan);
+        toast({ title: t('successTitle'), description: t('import_success') });
+      } catch (err: any) {
+        toast({ variant: "destructive", title: t('importError'), description: err.message });
+      }
+    };
+    reader.readAsText(file);
+    if (event.target) event.target.value = '';
+  };
+
+  const loadFlightPlan = async (plan: FlightPlan) => {
+    setWaypoints([]);
+    setPois([]);
+    setMissions([]);
+    setSelectedWaypointId(null);
+    setMultiSelectedWaypointIds(new Set());
+    
+    setSettings(plan.settings);
+    
+    setPois(plan.pois || []);
+    setWaypoints(plan.waypoints || []);
+    setMissions(plan.missions || []);
+
+    const maxWpId = plan.waypoints.reduce((max, wp) => Math.max(max, wp.id), 0);
+    const maxPoiId = plan.pois.reduce((max, p) => Math.max(max, p.id), 0);
+    const maxMissionId = (plan.missions || []).reduce((max, m) => Math.max(max, m.id), 0);
+
+    setWaypointCounter(maxWpId + 1);
+    setPoiCounter(maxPoiId + 1);
+    setMissionCounter(maxMissionId + 1);
+
+    if (plan.waypoints.length > 0) {
+      selectWaypoint(plan.waypoints[0].id);
+    }
+  };
+
+  const downloadFile = (filename: string, content: string | Blob, type: string) => {
+    const blob = content instanceof Blob ? content : new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  
+  const exportToJson = () => {
+    if (waypoints.length === 0 && pois.length === 0) {
+      toast({ variant: "destructive", title: t('nothingToExport') });
+      return;
+    }
+    const plan: FlightPlan = {
+      waypoints, pois, missions, settings
+    };
+    downloadFile("flight_plan.json", JSON.stringify(plan, null, 2), "application/json");
+    toast({ title: t('exportedToJson') });
+  };
+
+  const exportToKml = () => {
+    if (waypoints.length === 0) {
+        toast({ variant: "destructive", title: t('nothingToExport') });
+        return;
+    }
+    const homeElevationMSL = settings.homeElevationMsl;
+    
+    const kmlHeader = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Flight Plan (GE)</name>`;
+    const styles = `<Style id="wpStyle"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/blu-circle.png</href></Icon></IconStyle></Style><Style id="pathStyle"><LineStyle><color>ffdb9834</color><width>3</width></LineStyle></Style><Style id="poiStyle"><IconStyle><Icon><href>http://maps.google.com/mapfiles/kml/paddle/ylw-stars.png</href></Icon></IconStyle></Style>`;
+    const kmlFooter = `</Document></kml>`;
+
+    let waypointsKml = '<Folder><name>Waypoints</name>';
+    waypoints.forEach(wp => {
+        const altMSL = homeElevationMSL + wp.altitude;
+        waypointsKml += `<Placemark><name>WP ${wp.id}</name><Point><altitudeMode>absolute</altitudeMode><coordinates>${wp.latlng.lng},${wp.latlng.lat},${altMSL.toFixed(1)}</coordinates></Point></Placemark>`;
+    });
+    waypointsKml += '</Folder>';
+
+    let pathKml = '';
+    if (waypoints.length >= 2) {
+        const pathCoords = waypoints.map(wp => `${wp.latlng.lng},${wp.latlng.lat},${(homeElevationMSL + wp.altitude).toFixed(1)}`).join('\n');
+        pathKml = `<Placemark><name>Flight Path</name><styleUrl>#pathStyle</styleUrl><LineString><tessellate>1</tessellate><altitudeMode>absolute</altitudeMode><coordinates>\n${pathCoords}\n</coordinates></LineString></Placemark>`;
+    }
+
+    let poisKml = '';
+    if (pois.length > 0) {
+        poisKml += `<Folder><name>POIs</name>`;
+        pois.forEach(p => { 
+            poisKml += `<Placemark><name>${p.name}</name><Point><altitudeMode>absolute</altitudeMode><coordinates>${p.latlng.lng},${p.latlng.lat},${p.altitude}</coordinates></Point></Placemark>`;
+        });
+        poisKml += `</Folder>`;
+    }
+
+    const kmlContent = `${kmlHeader}${styles}${waypointsKml}${pathKml}${poisKml}${kmlFooter}`;
+    downloadFile("flight_plan_GE.kml", kmlContent, "application/vnd.google-earth.kml+xml");
+    toast({ title: t('exportedToKml') });
+  };
+
+  const exportToKmz = () => {
+    const validationErrors = validateFlightPlanForWpml(waypoints);
+    if (validationErrors.length > 0) {
+        toast({ variant: 'destructive', title: t('errorTitle'), description: validationErrors.map(key => t(key)).join(' ') });
+        return;
+    }
+
+    let actionGroupCounter = 1;
+    let actionCounter = 1;
+    const missionFlightSpeed = settings.flightSpeed;
+    const missionPathType = settings.pathType;
+    const homeElevationMSL = settings.homeElevationMsl;
+    const now = new Date();
+    const createTimeMillis = now.getTime().toString();
+    const waylineIdInt = Math.floor(now.getTime() / 1000); 
+    
+    const totalDistance = calculateMissionDistance(waypoints);
+    const totalDuration = calculateMissionDuration(waypoints, missionFlightSpeed);
+
+    const templateKml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:author>FlightPlanner</wpml:author><wpml:createTime>${createTimeMillis}</wpml:createTime><wpml:updateTime>${createTimeMillis}</wpml:updateTime><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo><wpml:payloadInfo><wpml:payloadEnumValue>0</wpml:payloadEnumValue><wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo></wpml:missionConfig></Document></kml>`;
+    
+    let waylinesWpml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo></wpml:missionConfig><Folder><name>Wayline Mission ${waylineIdInt}</name><wpml:templateId>0</wpml:templateId><wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode><wpml:waylineId>0</wpml:waylineId><wpml:distance>${Math.round(totalDistance)}</wpml:distance><wpml:duration>${Math.round(totalDuration)}</wpml:duration><wpml:autoFlightSpeed>${missionFlightSpeed}</wpml:autoFlightSpeed>\n`;
+
+    waypoints.forEach((wp, index) => {
+        waylinesWpml += `    <Placemark>\n`;
+        waylinesWpml += `      <Point><coordinates>${wp.latlng.lng.toFixed(10)},${wp.latlng.lat.toFixed(10)}</coordinates></Point>\n`;
+        waylinesWpml += `      <wpml:index>${index}</wpml:index>\n`;
+        waylinesWpml += `      <wpml:executeHeight>${wp.altitude.toFixed(1)}</wpml:executeHeight>\n`;
+        waylinesWpml += `      <wpml:waypointSpeed>${missionFlightSpeed}</wpml:waypointSpeed>\n`;
+        
+        waylinesWpml += `      <wpml:waypointHeadingParam>\n`;
+        const effectiveHeadingControl = wp.waypointType === 'grid' || wp.waypointType === 'facade' ? 'fixed' : wp.headingControl;
+        
+        if (effectiveHeadingControl === 'fixed') {
+            waylinesWpml += `        <wpml:waypointHeadingMode>smoothTransition</wpml:waypointHeadingMode>\n`;
+            waylinesWpml += `        <wpml:waypointHeadingAngle>${wp.fixedHeading}</wpml:waypointHeadingAngle>\n`;
+        } else if (effectiveHeadingControl === 'poi_track' && wp.targetPoiId != null) {
+            const targetPoi = pois.find(p => p.id === wp.targetPoiId);
+            if (targetPoi) {
+                const relativePoiAltitude = targetPoi.altitude - homeElevationMSL;
+                waylinesWpml += `        <wpml:waypointHeadingMode>towardPOI</wpml:waypointHeadingMode>\n`;
+                waylinesWpml += `        <wpml:waypointPoiPoint>${targetPoi.latlng.lng.toFixed(6)},${targetPoi.latlng.lat.toFixed(6)},${relativePoiAltitude.toFixed(1)}</wpml:waypointPoiPoint>\n`;
+            } else {
+                waylinesWpml += `        <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>\n`;
+            }
+        } else {
+            waylinesWpml += `        <wpml:waypointHeadingMode>followWayline</wpml:waypointHeadingMode>\n`;
+        }
+        waylinesWpml += `        <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>\n`;
+        waylinesWpml += `      </wpml:waypointHeadingParam>\n`;
+        
+        let turnMode;
+        if (wp.hoverTime > 0) {
+            turnMode = 'toPointAndStopWithDiscontinuityCurvature';
+        } else if (missionPathType === 'straight') {
+            turnMode = 'toPointAndStopWithDiscontinuityCurvature';
+        } else {
+            turnMode = (index === 0 || index === waypoints.length - 1) ? 'toPointAndStopWithContinuityCurvature' : 'toPointAndPassWithContinuityCurvature';
+        }
+        
+        waylinesWpml += `      <wpml:waypointTurnParam>\n`;
+        waylinesWpml += `        <wpml:waypointTurnMode>${turnMode}</wpml:waypointTurnMode>\n`;
+        waylinesWpml += `        <wpml:waypointTurnDampingDist>0.2</wpml:waypointTurnDampingDist>\n`;
+        waylinesWpml += `      </wpml:waypointTurnParam>\n`;
+
+        const useStraightLine = (turnMode === 'toPointAndStopWithDiscontinuityCurvature');
+        waylinesWpml += `      <wpml:useStraightLine>${useStraightLine ? 1 : 0}</wpml:useStraightLine>\n`;
+
+        let actionsXml = "";
+        if (wp.hoverTime > 0) {
+            actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>hover</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:hoverTime>${wp.hoverTime}</wpml:hoverTime></wpml:actionActuatorFuncParam></wpml:action>`;
+        }
+        if (wp.headingControl !== 'poi_track') {
+             const clampedPitch = Math.max(-90, Math.min(60, wp.gimbalPitch));
+             actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable><wpml:gimbalPitchRotateAngle>${clampedPitch}</wpml:gimbalPitchRotateAngle><wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable><wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable><wpml:gimbalRotateTimeEnable>1</wpml:gimbalRotateTimeEnable><wpml:gimbalRotateTime>1</wpml:gimbalRotateTime><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
+        }
+        if (wp.cameraAction && wp.cameraAction !== 'none') {
+            actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>${wp.cameraAction}</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
+        }
+        if (actionsXml) {
+            waylinesWpml += `<wpml:actionGroup><wpml:actionGroupId>${actionGroupCounter++}</wpml:actionGroupId><wpml:actionGroupStartIndex>${index}</wpml:actionGroupStartIndex><wpml:actionGroupEndIndex>${index}</wpml:actionGroupEndIndex><wpml:actionGroupMode>sequence</wpml:actionGroupMode><wpml:actionTrigger><wpml:actionTriggerType>reachPoint</wpml:actionTriggerType></wpml:actionTrigger>${actionsXml}</wpml:actionGroup>`;
+        }
+        waylinesWpml += `    </Placemark>\n`;
+    });
+    waylinesWpml += `  </Folder>\n</Document>\n</kml>`;
+
+    const zip = new JSZip();
+    zip.folder("wpmz")?.file("template.kml", templateKml).file("waylines.wpml", waylinesWpml);
+    zip.generateAsync({ type: "blob", mimeType: "application/vnd.google-earth.kmz" })
+        .then(blob => downloadFile(`flight_plan_dji_${waylineIdInt}.kmz`, blob, 'application/vnd.google-earth.kmz'))
+        .catch(err => toast({ variant: 'destructive', title: t('kmzGenError'), description: err.message }));
+    toast({ title: t('exportedToKmz') });
+  };
+
+
+  const flightStats: FlightStatistics = useMemo(() => {
+    let totalDistance = 0;
+    if (waypoints.length > 1) {
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        totalDistance += haversineDistance(waypoints[i].latlng, waypoints[i+1].latlng);
+      }
+    }
+    const totalHover = waypoints.reduce((sum, wp) => sum + (wp.hoverTime || 0), 0);
+    const flightTime = (totalDistance / (settings.flightSpeed > 0 ? settings.flightSpeed : 1)) + totalHover;
+
+    return {
+      totalDistance,
+      flightTime,
+      waypointCount: waypoints.length,
+      poiCount: pois.length,
+    };
+  }, [waypoints, pois.length, settings.flightSpeed]);
+
+  const handleMapClick = (latlng: LatLng, event: any) => {
+    if (drawingState.mode) return;
+    if (event.originalEvent.ctrlKey) {
+        addPoi(latlng, poiName, poiHeight);
+        toast({ title: t('poiAdded'), description: t('poiCreated', { name: poiName || `POI ${poiCounter}` }) });
+    } else {
+        addWaypoint(latlng);
+        toast({ title: t('waypointAdded'), description: t('waypointCreated', { count: waypointCounter }) });
+    }
+  };
+
+  const selectedWaypoint = useMemo(() => {
+    if (selectedWaypointId === null || multiSelectedWaypointIds.size > 0) return null;
+    return waypoints.find(wp => wp.id === selectedWaypointId) ?? null;
+  }, [selectedWaypointId, waypoints, multiSelectedWaypointIds]);
+  
+
+  const sidePanelProps = {
+    settings, updateSettings,
+    waypoints, selectedWaypoint, multiSelectedWaypointIds,
+    addWaypoint, updateWaypoint, deleteWaypoint, selectWaypoint,
+    toggleMultiSelectWaypoint, clearMultiSelection, selectAllWaypoints,
+    clearWaypoints, deleteMultiSelectedWaypoints,
+    pois, addPoi, deletePoi, updatePoi,
+    poiName, setPoiName, poiHeight, setPoiHeight,
+    missions, deleteMission, editMission: handleEditMission,
+    flightStats,
+    onOpenDialog: handleOpenDialog,
+    getHomeElevationFromFirstWaypoint, adaptToAGL, adaptToAMSL,
+    onImportJson: triggerImportJson,
+    onExportJson: exportToJson,
+    onExportKml: exportToKml,
+    onExportKmz: exportToKmz,
+  };
+
   return (
-    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[350px]' : 'ml-0')}>
-        <div id="map" className="relative h-full w-full bg-gray-800">
-            <MapContainer ref={mapRef} center={[42.5, 12.5]} zoom={6} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
-              <TileLayer
-                attribution={currentLayer.attribution}
-                url={currentLayer.url}
-                maxZoom={currentLayer.maxZoom}
-                maxNativeZoom={currentLayer.maxNativeZoom}
-                key={isSatelliteView ? 'satellite' : 'default'}
-              />
-              <ScaleControl position="bottomleft" />
-              <MapController 
-                waypoints={waypoints} 
-                isPanelOpen={isPanelOpen} 
-                selectedWaypointId={selectedWaypointId}
-              />
-              <MapInteractionManager onMapClick={onMapClick} drawingState={drawingState} />
-
-
-              {pathCoords.length > 1 && <Polyline pathOptions={pathOptions} positions={pathCoords} />}
-
-              {waypoints.map((wp, index) => (
-                <WaypointMarker 
-                    key={wp.id} 
-                    waypoint={wp}
-                    displayIndex={index + 1}
-                    waypoints={waypoints}
-                    pois={pois}
-                    settings={settings}
-                    isSelected={selectedWaypointId === wp.id}
-                    isMultiSelected={multiSelectedWaypointIds.has(wp.id)}
-                    onClick={onMarkerClick}
-                    onDragEnd={onMarkerDragEnd}
-                />
-              ))}
-
-              {pois.map(p => (
-                  <PoiMarker key={p.id} poi={p} />
-              ))}
-            </MapContainer>
-           
-            <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={toggleSatellite}><Layers className="w-5 h-5" /></Button></TooltipTrigger>
-                        <TooltipContent><p>Toggle Satellite View</p></TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => { if (mapRef.current && pathCoords.length > 0) mapRef.current.fitBounds(L.latLngBounds(pathCoords).pad(0.1)); }}><ZoomIn className="w-5 h-5" /></Button></TooltipTrigger>
-                        <TooltipContent><p>Fit to Mission</p></TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => mapRef.current?.locate()}><LocateFixed className="w-5 h-5" /></Button></TooltipTrigger>
-                        <TooltipContent><p>My Location</p></TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-            </div>
-        </div>
+    <div className="flex h-screen w-screen bg-background">
+      <ActionBar activePanel={activePanel} onPanelChange={handlePanelChange} />
+      <div className="flex flex-1 relative">
+        <SidePanel 
+          activePanel={activePanel} 
+          onClose={() => setActivePanel(null)}
+          {...sidePanelProps}
+        />
+        <MapView 
+            isPanelOpen={!!activePanel}
+            waypoints={waypoints}
+            pois={pois}
+            pathType={settings.pathType}
+            altitudeAdaptationMode={settings.altitudeAdaptationMode}
+            settings={settings}
+            selectedWaypointId={selectedWaypointId}
+            multiSelectedWaypointIds={multiSelectedWaypointIds}
+            drawingState={drawingState}
+            onMapClick={handleMapClick}
+            onMarkerClick={(id) => selectWaypoint(id)}
+            onMarkerDragEnd={updateWaypoint}
+        />
+      </div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileImport}
+        accept=".json"
+        className="hidden"
+      />
+      <OrbitDialog
+        open={activeDialog === 'orbit'}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setActiveDialog(null);
+            setEditingMissionId(null);
+          }
+        }}
+        isEditing={!!editingMissionId && activeDialog === 'orbit'}
+        pois={pois}
+        params={orbitParams}
+        onParamsChange={setOrbitParams}
+        onCreateOrbit={handleSaveOrbit}
+        onDrawRadius={handleDrawRadiusRequest}
+      />
+      <SurveyGridDialog
+        open={activeDialog === 'survey'}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setActiveDialog(null);
+            setEditingMissionId(null);
+          }
+        }}
+        isEditing={!!editingMissionId}
+        params={surveyParams}
+        onParamsChange={setSurveyParams}
+        onDrawArea={handleDrawSurveyAreaRequest}
+        onDrawAngle={handleDrawGridAngleRequest}
+        onCreateGrid={handleCreateSurveyGrid}
+      />
+      <FacadeScanDialog
+        open={activeDialog === 'facade'}
+        onOpenChange={(isOpen) => {
+            if (!isOpen) {
+                setActiveDialog(null);
+                setEditingMissionId(null);
+                setFacadeLine(null);
+            }
+        }}
+        isEditing={!!editingMissionId}
+        params={facadeParams}
+        onParamsChange={setFacadeParams}
+        onDrawLine={handleDrawFacadeLineRequest}
+        onGenerateScan={handleGenerateFacadeScan}
+        isLineDrawn={!!facadeLine}
+      />
     </div>
   );
+}
+
+export default function FlightPlanner() {
+    return (
+        <TranslationProvider>
+            <FlightPlannerUI />
+        </TranslationProvider>
+    );
 }
