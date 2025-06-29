@@ -126,46 +126,24 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
     );
 };
 
-const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
+const MapController = ({ waypoints, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
-    const prevPointCountRef = useRef(0);
 
-    useEffect(() => {
-        const allPoints = [...waypoints.map(wp => wp.latlng), ...pois.map(p => p.latlng)];
-        const currentPointCount = allPoints.length;
-
-        // Only run auto-fit logic when the number of points changes.
-        // This prevents re-fitting when a waypoint is just edited.
-        if (currentPointCount !== prevPointCountRef.current) {
-            if (currentPointCount === 1) {
-                // For a single point, center the view with a more useful, closer zoom.
-                map.setView(allPoints[0], 17);
-            } else if (currentPointCount > 1) {
-                // For multiple points, fit them all in view.
-                const bounds = L.latLngBounds(allPoints);
-                if (bounds.isValid()) {
-                    map.fitBounds(bounds.pad(0.1));
-                }
-            }
-        }
-
-        prevPointCountRef.current = currentPointCount;
-    }, [waypoints, pois, map]);
-    
     useEffect(() => {
         // Adjust map size when the side panel opens/closes
         setTimeout(() => map.invalidateSize(), 310);
     }, [isPanelOpen, map]);
 
     useEffect(() => {
-        // Pan to the selected waypoint, but only when the ID changes
+        // Pan to the selected waypoint, but only when the ID changes.
+        // This prevents re-panning when waypoint data is edited.
         if (selectedWaypointId) {
             const wp = waypoints.find(w => w.id === selectedWaypointId);
             if (wp) {
                 map.panTo(wp.latlng);
             }
         }
-    }, [selectedWaypointId, map]); // Dependency array is correct here, only runs on ID change
+    }, [selectedWaypointId, map]); // `waypoints` is intentionally omitted to prevent re-panning on data edits.
 
     return null;
 };
@@ -424,7 +402,6 @@ export function MapView(props: MapViewProps) {
               <ScaleControl position="bottomleft" />
               <MapController 
                 waypoints={waypoints} 
-                pois={pois}
                 isPanelOpen={isPanelOpen} 
                 selectedWaypointId={selectedWaypointId}
               />
