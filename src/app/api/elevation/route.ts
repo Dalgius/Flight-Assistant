@@ -5,8 +5,9 @@ import type { NextRequest } from 'next/server';
 const OPENTOPODATA_API_BASE = 'https://api.opentopodata.org/v1/srtm90m';
 
 export async function GET(request: NextRequest) {
-    // A more robust way to get search params on different platforms
-    const locations = request.nextUrl.searchParams.get('locations');
+    // Use the standard URL object to parse search parameters for maximum compatibility.
+    const { searchParams } = new URL(request.url);
+    const locations = searchParams.get('locations');
 
     if (!locations) {
         return NextResponse.json({ error: 'Missing "locations" query parameter.' }, { status: 400 });
@@ -18,20 +19,31 @@ export async function GET(request: NextRequest) {
         const res = await fetch(targetUrl, {
             method: 'GET',
             headers: {
-                'Accept': 'application/json', // Use Accept header for GET requests
+                'Accept': 'application/json',
             },
-            signal: AbortSignal.timeout(15000), // Increased timeout to 15 seconds
+            // Rely on the platform's default timeout
         });
 
+        // Get the raw text first to handle both success and error cases robustly
+        const responseText = await res.text();
+
         if (!res.ok) {
-            const errorData = await res.json().catch(() => ({ error: "Failed to parse error response" }));
-             return NextResponse.json(
-                { error: 'Error from upstream API', details: errorData },
+            console.error(`Upstream API error: ${res.status}`, responseText);
+            // Attempt to parse the error text as JSON, but have a fallback
+            let errorDetails;
+            try {
+                errorDetails = JSON.parse(responseText);
+            } catch {
+                errorDetails = { error: "Failed to parse error from upstream API", raw: responseText };
+            }
+            return NextResponse.json(
+                { error: 'Error from upstream API', details: errorDetails },
                 { status: res.status }
             );
         }
 
-        const data = await res.json();
+        // Re-parsing the JSON from text ensures it's valid before sending.
+        const data = JSON.parse(responseText);
 
         return NextResponse.json(data, {
             status: 200,
@@ -41,10 +53,7 @@ export async function GET(request: NextRequest) {
         });
 
     } catch (error: any) {
-        console.error(`Elevation API Error: ${error.name === 'TimeoutError' ? 'Request timed out' : error.message}`);
-         if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-             return NextResponse.json({ error: 'Request to upstream API timed out' }, { status: 504 });
-        }
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+        console.error(`Elevation API Proxy Error: ${error.message}`);
+        return NextResponse.json({ error: 'Internal Server Error while proxying elevation request' }, { status: 500 });
     }
 }
