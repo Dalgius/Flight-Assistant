@@ -304,7 +304,13 @@ export async function getElevationsBatch(locations: LatLng[]): Promise<(number |
         const locationsString = batch.map(loc => `${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`).join('|');
         
         try {
-            const response = await fetch(`/api/elevation?locations=${encodeURIComponent(locationsString)}`);
+            const response = await fetch(`/api/elevation`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ locations: locationsString }),
+            });
             
             if (!response.ok) {
                 console.error(`Elevation API Error: Status ${response.status}`);
@@ -313,7 +319,7 @@ export async function getElevationsBatch(locations: LatLng[]): Promise<(number |
             
             const data = await response.json();
 
-            if (data.status === "OK" && data.results) {
+            if (data.results) { // OpenTopoData may return OK but with an error message
                  data.results.forEach((result: { elevation: number | null }, indexInBatch: number) => {
                     const originalIndex = i + indexInBatch;
                     if (result.elevation !== null) {
