@@ -251,8 +251,31 @@ function FlightPlannerUI() {
   }, [poiCounter, toast, t]);
   
   const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
-    setPois(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
-  }, []);
+    setPois(prevPois => {
+      const newPois = prevPois.map(p => (p.id === id ? { ...p, ...updates } : p));
+      const updatedPoi = newPois.find(p => p.id === id);
+
+      if (updatedPoi) {
+        setWaypoints(prevWaypoints =>
+          prevWaypoints.map(wp => {
+            if (wp.headingControl === 'poi_track' && wp.targetPoiId === id) {
+              const waypointAMSL = settings.homeElevationMsl + wp.altitude;
+              const poiAMSL = updatedPoi.altitude;
+              const horizontalDistance = haversineDistance(wp.latlng, updatedPoi.latlng);
+              const newGimbalPitch = calculateRequiredGimbalPitch(
+                waypointAMSL,
+                poiAMSL,
+                horizontalDistance
+              );
+              return { ...wp, gimbalPitch: newGimbalPitch };
+            }
+            return wp;
+          })
+        );
+      }
+      return newPois;
+    });
+  }, [settings.homeElevationMsl]);
 
   const deletePoi = useCallback((id: number) => {
     setPois(prev => prev.filter(p => p.id !== id));
