@@ -47,7 +47,7 @@ export function SurveyGridDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEditing ? t('editSurveyTitle') : t('createSurveyTitle')}</DialogTitle>
           <DialogDescription>
@@ -56,7 +56,7 @@ export function SurveyGridDialog({
               : t('surveyAreaNotDefinedDesc')}
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <div className="space-y-4 py-2 px-1">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="surveyAltitude">{t('surveyAltitude')}</Label>
