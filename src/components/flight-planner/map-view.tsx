@@ -128,18 +128,20 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
 
 const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
-    
+    const initialFitDoneRef = useRef(false);
+
     useEffect(() => {
-      const allPoints = [...waypoints.map(wp => wp.latlng), ...pois.map(p => p.latlng)];
-      if (allPoints.length > 0) {
-        const bounds = L.latLngBounds(allPoints);
-        if (bounds.isValid()) {
-            map.fitBounds(bounds.pad(0.1));
+        if (initialFitDoneRef.current || (waypoints.length === 0 && pois.length === 0)) return;
+
+        const allPoints = [...waypoints.map(wp => wp.latlng), ...pois.map(p => p.latlng)];
+        if (allPoints.length > 0) {
+            const bounds = L.latLngBounds(allPoints);
+            if (bounds.isValid()) {
+                map.fitBounds(bounds.pad(0.1));
+                initialFitDoneRef.current = true;
+            }
         }
-      } else {
-        map.setView([42.5, 12.5], 6);
-      }
-    }, []);
+    }, [waypoints, pois, map]);
     
     useEffect(() => {
         setTimeout(() => map.invalidateSize(), 310);
@@ -152,7 +154,7 @@ const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { w
                 map.panTo(wp.latlng);
             }
         }
-    }, [selectedWaypointId, map, waypoints]);
+    }, [selectedWaypointId, map]); // Removed `waypoints` from dependency array
 
     return null;
 };
