@@ -46,7 +46,7 @@ function FlightPlannerUI() {
   const [editingMissionId, setEditingMissionId] = useState<number | null>(null);
 
   const [poiName, setPoiName] = useState('');
-  const [poiHeight, setPoiHeight] = useState(10);
+  const [poiHeight, setPoiHeight] = useState(0);
 
   const [orbitParams, setOrbitParams] = useState({ poiId: "", radius: 30, numPoints: 8 });
   const [surveyParams, setSurveyParams] = useState<SurveyGridParams>({
@@ -152,7 +152,7 @@ function FlightPlannerUI() {
     if (homeElevationUpdate) {
         setSettings(prev => ({...prev, ...homeElevationUpdate}));
     }
-  }, [waypoints, t]);
+  }, [waypoints]);
 
   const deleteWaypoint = useCallback((id: number) => {
     setWaypoints(prev => prev.filter(wp => wp.id !== id));
@@ -250,32 +250,38 @@ function FlightPlannerUI() {
     }
   }, [poiCounter, toast, t]);
   
-  const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
-    setPois(prevPois => {
-      const newPois = prevPois.map(p => (p.id === id ? { ...p, ...updates } : p));
-      const updatedPoi = newPois.find(p => p.id === id);
-
-      if (updatedPoi) {
-        setWaypoints(prevWaypoints =>
-          prevWaypoints.map(wp => {
-            if (wp.headingControl === 'poi_track' && wp.targetPoiId === id) {
-              const waypointAMSL = settings.homeElevationMsl + wp.altitude;
-              const poiAMSL = updatedPoi.altitude;
-              const horizontalDistance = haversineDistance(wp.latlng, updatedPoi.latlng);
-              const newGimbalPitch = calculateRequiredGimbalPitch(
-                waypointAMSL,
-                poiAMSL,
-                horizontalDistance
-              );
+  // Decoupled POI update logic. This useEffect will run after `pois` state is updated.
+  useEffect(() => {
+    setWaypoints(prevWaypoints =>
+      prevWaypoints.map(wp => {
+        if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
+          const targetPoi = pois.find(p => p.id === wp.targetPoiId);
+          if (targetPoi) {
+            const waypointAMSL = settings.homeElevationMsl + wp.altitude;
+            const poiAMSL = targetPoi.altitude;
+            const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
+            const newGimbalPitch = calculateRequiredGimbalPitch(
+              waypointAMSL,
+              poiAMSL,
+              horizontalDistance
+            );
+            // Only create a new object if the pitch actually changes
+            if (wp.gimbalPitch !== newGimbalPitch) {
               return { ...wp, gimbalPitch: newGimbalPitch };
             }
-            return wp;
-          })
-        );
-      }
-      return newPois;
-    });
-  }, [settings.homeElevationMsl]);
+          }
+        }
+        return wp;
+      })
+    );
+  }, [pois, settings.homeElevationMsl]); // Dependency on the entire pois array
+
+  // Refactored updatePoi to only update the POIs state
+  const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
+    setPois(prevPois =>
+      prevPois.map(p => (p.id === id ? { ...p, ...updates } : p))
+    );
+  }, []);
 
   const deletePoi = useCallback((id: number) => {
     setPois(prev => prev.filter(p => p.id !== id));
