@@ -402,7 +402,7 @@ export function MapView(props: MapViewProps) {
   return (
     <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[350px]' : 'ml-0')}>
         <div id="map" className="relative h-full w-full bg-gray-800">
-            <MapContainer ref={mapRef} center={[42.5, 12.5]} zoom={6} scrollWheelZoom={true} maxZoom={25} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+            <MapContainer ref={mapRef} center={[42.5, 12.5]} zoom={6} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
               <TileLayer
                 attribution={currentLayer.attribution}
                 url={currentLayer.url}
