@@ -128,33 +128,44 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
 
 const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
-    const initialFitDoneRef = useRef(false);
+    const prevPointCountRef = useRef(0);
 
     useEffect(() => {
-        if (initialFitDoneRef.current || (waypoints.length === 0 && pois.length === 0)) return;
-
         const allPoints = [...waypoints.map(wp => wp.latlng), ...pois.map(p => p.latlng)];
-        if (allPoints.length > 0) {
-            const bounds = L.latLngBounds(allPoints);
-            if (bounds.isValid()) {
-                map.fitBounds(bounds.pad(0.1));
-                initialFitDoneRef.current = true;
+        const currentPointCount = allPoints.length;
+
+        // Only run auto-fit logic when the number of points changes.
+        // This prevents re-fitting when a waypoint is just edited.
+        if (currentPointCount !== prevPointCountRef.current) {
+            if (currentPointCount === 1) {
+                // For a single point, center the view with a more useful, closer zoom.
+                map.setView(allPoints[0], 17);
+            } else if (currentPointCount > 1) {
+                // For multiple points, fit them all in view.
+                const bounds = L.latLngBounds(allPoints);
+                if (bounds.isValid()) {
+                    map.fitBounds(bounds.pad(0.1));
+                }
             }
         }
+
+        prevPointCountRef.current = currentPointCount;
     }, [waypoints, pois, map]);
     
     useEffect(() => {
+        // Adjust map size when the side panel opens/closes
         setTimeout(() => map.invalidateSize(), 310);
     }, [isPanelOpen, map]);
 
     useEffect(() => {
+        // Pan to the selected waypoint, but only when the ID changes
         if (selectedWaypointId) {
             const wp = waypoints.find(w => w.id === selectedWaypointId);
             if (wp) {
                 map.panTo(wp.latlng);
             }
         }
-    }, [selectedWaypointId, map]); // Removed `waypoints` from dependency array
+    }, [selectedWaypointId, map]); // Dependency array is correct here, only runs on ID change
 
     return null;
 };
@@ -449,7 +460,7 @@ export function MapView(props: MapViewProps) {
                         <TooltipContent><p>Toggle Satellite View</p></TooltipContent>
                     </Tooltip>
                     <Tooltip>
-                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => mapRef.current?.fitBounds(L.latLngBounds(pathCoords).pad(0.1))}><ZoomIn className="w-5 h-5" /></Button></TooltipTrigger>
+                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => { if (mapRef.current && pathCoords.length > 0) mapRef.current.fitBounds(L.latLngBounds(pathCoords).pad(0.1)); }}><ZoomIn className="w-5 h-5" /></Button></TooltipTrigger>
                         <TooltipContent><p>Fit to Mission</p></TooltipContent>
                     </Tooltip>
                     <Tooltip>
