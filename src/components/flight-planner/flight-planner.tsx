@@ -180,7 +180,7 @@ function FlightPlannerUI() {
   }, [multiSelectedWaypointIds, toast, t]);
 
   const selectWaypoint = useCallback((id: number | null) => {
-    if (multiSelectedWaypointIds.size > 0) {
+    if (id !== null && multiSelectedWaypointIds.size > 0) {
       setMultiSelectedWaypointIds(new Set());
     }
     setSelectedWaypointId(id);
@@ -250,14 +250,20 @@ function FlightPlannerUI() {
     }
   }, [poiCounter, toast, t]);
   
-  // Decoupled POI update logic. This useEffect will run after `pois` state is updated.
   useEffect(() => {
     setWaypoints(prevWaypoints =>
       prevWaypoints.map(wp => {
         if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
           const targetPoi = pois.find(p => p.id === wp.targetPoiId);
           if (targetPoi) {
-            const waypointAMSL = settings.homeElevationMsl + wp.altitude;
+            let waypointAMSL: number;
+            
+            if (settings.altitudeAdaptationMode === 'amsl') {
+                waypointAMSL = settings.desiredAMSL;
+            } else {
+                waypointAMSL = settings.homeElevationMsl + wp.altitude;
+            }
+
             const poiAMSL = targetPoi.altitude;
             const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
             const newGimbalPitch = calculateRequiredGimbalPitch(
@@ -265,7 +271,6 @@ function FlightPlannerUI() {
               poiAMSL,
               horizontalDistance
             );
-            // Only create a new object if the pitch actually changes
             if (wp.gimbalPitch !== newGimbalPitch) {
               return { ...wp, gimbalPitch: newGimbalPitch };
             }
@@ -274,12 +279,20 @@ function FlightPlannerUI() {
         return wp;
       })
     );
-  }, [pois, settings.homeElevationMsl, settings.altitudeAdaptationMode]);
+  }, [pois, settings.homeElevationMsl, settings.altitudeAdaptationMode, settings.desiredAMSL]);
 
-  // Refactored updatePoi to only update the POIs state
   const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
     setPois(prevPois =>
-      prevPois.map(p => (p.id === id ? { ...p, ...updates } : p))
+        prevPois.map(p => {
+            if (p.id === id) {
+                const newPoi = { ...p, ...updates };
+                if (updates.objectHeightAboveGround !== undefined || updates.terrainElevationMSL !== undefined) {
+                    newPoi.altitude = (newPoi.terrainElevationMSL ?? 0) + newPoi.objectHeightAboveGround;
+                }
+                return newPoi;
+            }
+            return p;
+        })
     );
   }, []);
 
@@ -654,7 +667,7 @@ const handleGenerateFacadeScan = useCallback(() => {
     const elevations = await getElevationsBatch(locations);
 
     let successCount = 0;
-    const newWaypoints = waypoints.map((wp, index) => {
+    const newWaypointsWithAltitude = waypoints.map((wp, index) => {
       const groundElevation = elevations[index];
       if (groundElevation !== null) {
         successCount++;
@@ -669,7 +682,21 @@ const handleGenerateFacadeScan = useCallback(() => {
       return { ...wp, terrainElevationMSL: null };
     });
 
-    setWaypoints(newWaypoints);
+    const finalWaypoints = newWaypointsWithAltitude.map(wp => {
+      if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
+        const targetPoi = pois.find(p => p.id === wp.targetPoiId);
+        if (targetPoi) {
+          const waypointAMSL = settings.homeElevationMsl + wp.altitude;
+          const poiAMSL = targetPoi.altitude;
+          const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
+          const newGimbalPitch = calculateRequiredGimbalPitch(waypointAMSL, poiAMSL, horizontalDistance);
+          return { ...wp, gimbalPitch: newGimbalPitch };
+        }
+      }
+      return wp;
+    });
+
+    setWaypoints(finalWaypoints);
     setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'agl' }));
     if (successCount === waypoints.length && waypoints.length > 0) {
         toast({ title: t('successTitle'), description: t('adaptAglSuccess') });
@@ -678,7 +705,7 @@ const handleGenerateFacadeScan = useCallback(() => {
     } else {
         toast({ variant: "destructive", title: t('error'), description: t('adaptAglFailure') });
     }
-  }, [waypoints, settings.desiredAGL, settings.homeElevationMsl, toast, t]);
+  }, [waypoints, settings.desiredAGL, settings.homeElevationMsl, pois, toast, t]);
 
   const adaptToAMSL = useCallback(async () => {
     if (waypoints.length === 0) {
@@ -688,7 +715,8 @@ const handleGenerateFacadeScan = useCallback(() => {
     toast({ title: t('processing'), description: t('fetchingTerrainData') });
     const locations = waypoints.map(wp => wp.latlng);
     const elevations = await getElevationsBatch(locations);
-    const newWaypoints = waypoints.map((wp, index) => {
+    
+    const newWaypointsWithAltitude = waypoints.map((wp, index) => {
         const newRelativeAltitude = settings.desiredAMSL - settings.homeElevationMsl;
         return {
             ...wp,
@@ -697,10 +725,24 @@ const handleGenerateFacadeScan = useCallback(() => {
         };
     });
 
-    setWaypoints(newWaypoints);
+    const finalWaypoints = newWaypointsWithAltitude.map(wp => {
+        if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
+            const targetPoi = pois.find(p => p.id === wp.targetPoiId);
+            if (targetPoi) {
+                const waypointAMSL = settings.homeElevationMsl + wp.altitude;
+                const poiAMSL = targetPoi.altitude;
+                const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
+                const newGimbalPitch = calculateRequiredGimbalPitch(waypointAMSL, poiAMSL, horizontalDistance);
+                return { ...wp, gimbalPitch: newGimbalPitch };
+            }
+        }
+        return wp;
+    });
+
+    setWaypoints(finalWaypoints);
     setSettings(prev => ({ ...prev, altitudeAdaptationMode: 'amsl' }));
     toast({ title: t('successTitle'), description: t('adaptAmslSuccess', { amsl: settings.desiredAMSL }) });
-  }, [waypoints, settings.desiredAMSL, settings.homeElevationMsl, toast, t]);
+  }, [waypoints, settings.desiredAMSL, settings.homeElevationMsl, pois, toast, t]);
 
   const triggerImportJson = () => {
     fileInputRef.current?.click();
