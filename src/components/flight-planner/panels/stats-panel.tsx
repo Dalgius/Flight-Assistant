@@ -32,7 +32,7 @@ export function StatsPanel({ flightStats }: PanelProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
-            <StatRow label={t('totalDistance')} value={`${Math.round(flightStats.totalDistance)} m`} />
+            <StatRow label={t('totalDistance')} value={`${flightStats.totalDistance.toFixed(2)} m`} />
             <Separator />
             <StatRow label={t('estFlightTime')} value={formatDuration(flightStats.flightTime)} />
             <Separator />
