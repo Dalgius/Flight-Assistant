@@ -38,7 +38,7 @@ export function SidePanel({ activePanel, onClose, ...props }: SidePanelProps) {
   return (
     <div
       className={cn(
-        'absolute top-0 left-0 h-full w-[380px] bg-[#25282B] z-10 flex flex-col transition-transform duration-300 ease-in-out',
+        'absolute top-0 left-0 h-full w-[400px] bg-[#25282B] z-10 flex flex-col transition-transform duration-300 ease-in-out',
         'border-r border-border shadow-2xl',
         activePanel ? 'translate-x-0' : '-translate-x-full'
       )}
