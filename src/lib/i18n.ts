@@ -168,6 +168,21 @@ export const translations: Translations = {
         "updateGrid": "Update Grid",
         "generateGrid": "Generate Grid",
 
+        // Map Popups
+        "popupWpTitle": "Waypoint {displayIndex}",
+        "popupLat": "Lat",
+        "popupLng": "Lng",
+        "popupFlightAlt": "Flight Alt (Rel)",
+        "popupAmslAlt": "AMSL Alt",
+        "popupAglAlt": "AGL Alt",
+        "popupTerrainElev": "Terrain Elev",
+        "popupGimbal": "Gimbal",
+        "popupHover": "Hover",
+        "popupPoiTitle": "{name} (ID: {id})",
+        "popupFinalAmsl": "Final AMSL",
+        "popupPoiTerrainElev": "Terrain Elev",
+        "popupPoiObjectHeight": "Object Height",
+
         // Toasts / Alerts
         "fetchingElevation": "Fetching Elevation...",
         "gettingTakeoffElevation": "Getting ground elevation for takeoff point.",
@@ -404,6 +419,21 @@ export const translations: Translations = {
         "updateGrid": "Aggiorna Griglia",
         "generateGrid": "Genera Griglia",
         
+        // Map Popups
+        "popupWpTitle": "Waypoint {displayIndex}",
+        "popupLat": "Lat",
+        "popupLng": "Lng",
+        "popupFlightAlt": "Alt Volo (Rel)",
+        "popupAmslAlt": "Alt AMSL",
+        "popupAglAlt": "Alt AGL",
+        "popupTerrainElev": "Elev Terreno",
+        "popupGimbal": "Gimbal",
+        "popupHover": "Staz.",
+        "popupPoiTitle": "{name} (ID: {id})",
+        "popupFinalAmsl": "AMSL Finale",
+        "popupPoiTerrainElev": "Elev Terreno",
+        "popupPoiObjectHeight": "H Oggetto",
+
         // Toasts / Alerts
         "fetchingElevation": "Recupero elevazione...",
         "gettingTakeoffElevation": "Recupero elevazione del suolo per il punto di decollo.",
