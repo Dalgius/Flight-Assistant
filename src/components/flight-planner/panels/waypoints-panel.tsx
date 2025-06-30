@@ -34,11 +34,11 @@ const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSel
 
     const homeElevation = settings.homeElevationMsl ?? 0;
     const altitudeRelToHome = waypoint.altitude;
-    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(1)}m`;
+    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(2)}m`;
     let aglText = t('na');
     if (waypoint.terrainElevationMSL !== null) {
       const amslWaypoint = homeElevation + altitudeRelToHome;
-      aglText = `${(amslWaypoint - waypoint.terrainElevationMSL).toFixed(1)}m`;
+      aglText = `${(amslWaypoint - waypoint.terrainElevationMSL).toFixed(2)}m`;
     }
     
     return (
@@ -56,7 +56,7 @@ const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSel
           <div className="flex-1 overflow-hidden">
             <p className="font-semibold truncate">{t('waypointItemTitle', { displayIndex })}</p>
             <div className="text-xs text-muted-foreground leading-tight space-y-0.5">
-                <div>{t('waypointRelAlt')}: {altitudeRelToHome.toFixed(1)}m</div>
+                <div>{t('waypointRelAlt')}: {altitudeRelToHome.toFixed(2)}m</div>
                 <div>{t('waypointAmslAlt')}: {amslText}</div>
                 <div>{t('waypointAglAlt')}: {aglText}</div>
                 <div>{t('waypointPitch')}: {waypoint.gimbalPitch}° | {t('waypointHover')}: {waypoint.hoverTime}s</div>
@@ -89,22 +89,22 @@ const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, de
                 <div className="space-y-2">
                     <Label htmlFor={`altitude-slider-${waypoint.id}`}>{t('altitudeLabel')}</Label>
                     <div className="flex items-center gap-4">
-                        <Slider id={`altitude-slider-${waypoint.id}`} value={[waypoint.altitude]} onValueChange={([val]) => handleUpdate('altitude', val)} max={120} step={1} />
-                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.altitude} m</span>
+                        <Slider id={`altitude-slider-${waypoint.id}`} value={[waypoint.altitude]} onValueChange={([val]) => handleUpdate('altitude', val)} max={120} step={0.01} />
+                        <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.altitude.toFixed(2)} m</span>
                     </div>
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor={`gimbal-slider-${waypoint.id}`}>{t('gimbalPitchLabel')}</Label>
                     <div className="flex items-center gap-4">
                         <Slider id={`gimbal-slider-${waypoint.id}`} value={[waypoint.gimbalPitch]} onValueChange={([val]) => handleUpdate('gimbalPitch', val)} min={-90} max={30} step={1} />
-                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.gimbalPitch}°</span>
+                        <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.gimbalPitch}°</span>
                     </div>
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor={`hover-slider-${waypoint.id}`}>{t('hoverTimeLabel')}</Label>
                     <div className="flex items-center gap-4">
                         <Slider id={`hover-slider-${waypoint.id}`} value={[waypoint.hoverTime]} onValueChange={([val]) => handleUpdate('hoverTime', val)} max={30} step={1} />
-                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.hoverTime} s</span>
+                        <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.hoverTime} s</span>
                     </div>
                 </div>
 
@@ -124,7 +124,7 @@ const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, de
                         <Label htmlFor={`heading-slider-${waypoint.id}`}>{t('fixedHeadingLabel')}</Label>
                         <div className="flex items-center gap-4">
                             <Slider id={`heading-slider-${waypoint.id}`} value={[waypoint.fixedHeading]} onValueChange={([val]) => handleUpdate('fixedHeading', val)} max={359} step={1} />
-                            <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.fixedHeading}°</span>
+                            <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.fixedHeading}°</span>
                         </div>
                     </div>
                 )}
@@ -243,8 +243,8 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                     <Label htmlFor="applyAltitude" className="cursor-pointer flex-1">{t('altitudeLabel')}</Label>
                 </div>
                 <div className="flex items-center gap-4 pl-6">
-                    <Slider disabled={!apply.altitude} value={[updates.altitude ?? 50]} onValueChange={([val]) => handleValueChange('altitude', val)} max={120} step={1} />
-                    <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.altitude ?? 50} m</span>
+                    <Slider disabled={!apply.altitude} value={[updates.altitude ?? 50]} onValueChange={([val]) => handleValueChange('altitude', val)} max={120} step={0.01} />
+                    <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{(updates.altitude ?? 50).toFixed(2)} m</span>
                 </div>
             </div>
             
@@ -255,7 +255,7 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                 </div>
                 <div className="flex items-center gap-4 pl-6">
                     <Slider disabled={!apply.gimbalPitch} value={[updates.gimbalPitch ?? 0]} onValueChange={([val]) => handleValueChange('gimbalPitch', val)} min={-90} max={30} step={1} />
-                    <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.gimbalPitch ?? 0}°</span>
+                    <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.gimbalPitch ?? 0}°</span>
                 </div>
             </div>
 
@@ -266,7 +266,7 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                 </div>
                 <div className="flex items-center gap-4 pl-6">
                     <Slider disabled={!apply.hoverTime} value={[updates.hoverTime ?? 0]} onValueChange={([val]) => handleValueChange('hoverTime', val)} max={30} step={1} />
-                    <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.hoverTime ?? 0} s</span>
+                    <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.hoverTime ?? 0} s</span>
                 </div>
             </div>
 
@@ -293,7 +293,7 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                     <Label>{t('fixedHeadingLabel')}</Label>
                     <div className="flex items-center gap-4">
                         <Slider value={[updates.fixedHeading ?? 0]} onValueChange={([val]) => handleValueChange('fixedHeading', val)} max={359} step={1} />
-                        <span className="w-14 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.fixedHeading ?? 0}°</span>
+                        <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.fixedHeading ?? 0}°</span>
                     </div>
                 </div>
             )}
