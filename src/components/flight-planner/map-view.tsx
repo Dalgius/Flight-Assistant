@@ -12,6 +12,7 @@ import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Waypoint, POI, LatLng, DrawingState, FlightPlanSettings } from './types';
 import { calculateBearing, createSmoothPath } from '@/lib/flight-plan-calcs';
+import { useTranslation } from '@/hooks/use-translation';
 
 // Fix for default Leaflet icon path issue with bundlers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -135,33 +136,22 @@ const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { w
     }, [isPanelOpen, map]);
 
     useEffect(() => {
-        const allPoints = [...waypoints.map(w => w.latlng), ...pois.map(p => p.latlng)];
+        if (!selectedWaypointId) return;
 
-        if (selectedWaypointId === null) {
-            // When nothing is selected (e.g., after loading a plan), fit to all points
-            if (allPoints.length > 0) {
-                map.fitBounds(L.latLngBounds(allPoints).pad(0.1));
-            }
-        } else {
-            const wp = waypoints.find(w => w.id === selectedWaypointId);
-            if (wp) {
-                // When a waypoint is selected from the list, pan to it
-                map.panTo(wp.latlng);
-            }
+        const wp = waypoints.find(w => w.id === selectedWaypointId);
+        if (wp) {
+            // When a waypoint is selected from the list, pan to it
+            map.panTo(wp.latlng);
         }
     }, [selectedWaypointId, map]);
+
 
     useEffect(() => {
         const allPoints = [...waypoints.map(w => w.latlng), ...pois.map(p => p.latlng)];
 
-        if (allPoints.length === 1) {
+        if (allPoints.length === 1 && waypoints.length === 1) {
             // If there's only one point on the map, center on it with a reasonable zoom
             map.setView(allPoints[0], 17);
-        } else if (allPoints.length > 1) {
-            // Do nothing, let user control zoom/pan, or let selection handle pan
-        } else {
-            // No points, set to default view
-            map.setView([42.5, 12.5], 6);
         }
     }, [waypoints.length, pois.length, map]);
 
@@ -269,6 +259,7 @@ const createWaypointIcon = (waypoint: Waypoint, displayIndex: number, isSelected
 
 const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isSelected, isMultiSelected, onClick, onDragEnd }: any) => {
     const markerRef = useRef<L.Marker>(null);
+    const { t } = useTranslation();
     const isHome = waypoints[0]?.id === waypoint.id;
 
     const icon = useMemo(() => createWaypointIcon(waypoint, displayIndex, isSelected, isMultiSelected, isHome, waypoints, pois), 
@@ -300,8 +291,8 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
     const homeElevation = settings?.homeElevationMsl ?? 0;
     const altitudeRelToHome = waypoint.altitude;
     const amslText = `${(homeElevation + altitudeRelToHome).toFixed(1)} m`;
-    const aglText = waypoint.terrainElevationMSL !== null ? `${((homeElevation + altitudeRelToHome) - waypoint.terrainElevationMSL).toFixed(1)}m` : "N/A";
-    const terrainElevText = waypoint.terrainElevationMSL !== null ? `${waypoint.terrainElevationMSL.toFixed(1)}m` : "N/A";
+    const aglText = waypoint.terrainElevationMSL !== null ? `${((homeElevation + altitudeRelToHome) - waypoint.terrainElevationMSL).toFixed(1)}m` : t('na');
+    const terrainElevText = waypoint.terrainElevationMSL !== null ? `${waypoint.terrainElevationMSL.toFixed(1)}m` : t('na');
 
     return (
         <Marker
@@ -313,14 +304,14 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
             zIndexOffset={zIndexOffset}
         >
             <Popup autoPan={false}>
-                <div className="text-xs leading-snug">
-                    <strong className="text-sm">Waypoint {displayIndex}</strong><br />
-                    Lat: {waypoint.latlng.lat.toFixed(5)}, Lng: {waypoint.latlng.lng.toFixed(5)}<br />
-                    Flight Alt (Rel): {altitudeRelToHome} m<br />
-                    AMSL Alt: {amslText}<br />
-                    AGL Alt: {aglText}<br />
-                    Terrain Elev: {terrainElevText}<br />
-                    Gimbal: {waypoint.gimbalPitch}° | Hover: {waypoint.hoverTime}s
+                 <div className="text-xs leading-snug">
+                    <strong className="text-sm">{t('popupWpTitle', {displayIndex})}</strong><br />
+                    {t('popupLat')}: {waypoint.latlng.lat.toFixed(5)}, {t('popupLng')}: {waypoint.latlng.lng.toFixed(5)}<br />
+                    {t('popupFlightAlt')}: {altitudeRelToHome} m<br />
+                    {t('popupAmslAlt')}: {amslText}<br />
+                    {t('popupAglAlt')}: {aglText}<br />
+                    {t('popupTerrainElev')}: {terrainElevText}<br />
+                    {t('popupGimbal')}: {waypoint.gimbalPitch}° | {t('popupHover')}: {waypoint.hoverTime}s
                 </div>
             </Popup>
         </Marker>
@@ -329,6 +320,7 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
 
 const PoiMarker = ({ poi }: { poi: POI }) => {
     const markerRef = useRef<L.Marker>(null);
+    const { t } = useTranslation();
 
     const icon = L.divIcon({
         className: 'poi-marker',
@@ -346,7 +338,7 @@ const PoiMarker = ({ poi }: { poi: POI }) => {
         },
     }), []);
     
-    const terrainElevText = poi.terrainElevationMSL !== null ? `${poi.terrainElevationMSL.toFixed(1)} m` : "N/A";
+    const terrainElevText = poi.terrainElevationMSL !== null ? `${poi.terrainElevationMSL.toFixed(1)} m` : t('na');
 
     return (
         <Marker 
@@ -357,11 +349,11 @@ const PoiMarker = ({ poi }: { poi: POI }) => {
         >
             <Popup autoPan={false}>
                 <div className="text-xs leading-snug">
-                    <strong className="text-sm">{poi.name} (ID: {poi.id})</strong><br />
-                    Lat: {poi.latlng.lat.toFixed(5)}, Lng: {poi.latlng.lng.toFixed(5)}<br />
-                    Final AMSL: {poi.altitude.toFixed(1)} m<br />
-                    Terrain Elev: {terrainElevText}<br />
-                    Object Height: {poi.objectHeightAboveGround.toFixed(1)} m
+                    <strong className="text-sm">{t('popupPoiTitle', { name: poi.name, id: poi.id })}</strong><br />
+                    {t('popupLat')}: {poi.latlng.lat.toFixed(5)}, {t('popupLng')}: {poi.latlng.lng.toFixed(5)}<br />
+                    {t('popupFinalAmsl')}: {poi.altitude.toFixed(1)} m<br />
+                    {t('popupPoiTerrainElev')}: {terrainElevText}<br />
+                    {t('popupPoiObjectHeight')}: {poi.objectHeightAboveGround.toFixed(1)} m
                 </div>
             </Popup>
         </Marker>
@@ -385,7 +377,7 @@ interface MapViewProps {
 }
 
 const satelliteLayer = {
-  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   attribution: 'Tiles &copy; Esri',
   maxZoom: 25,
   maxNativeZoom: 21,
