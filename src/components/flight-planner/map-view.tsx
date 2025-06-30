@@ -147,13 +147,10 @@ const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { w
 
 
     useEffect(() => {
-        const allPoints = [...waypoints.map(w => w.latlng), ...pois.map(p => p.latlng)];
-
-        if (allPoints.length === 1 && waypoints.length === 1) {
-            // If there's only one point on the map, center on it with a reasonable zoom
-            map.setView(allPoints[0], 17);
+        if (waypoints.length === 1 && pois.length === 0) {
+            map.setView(waypoints[0].latlng, 17);
         }
-    }, [waypoints.length, pois.length, map]);
+    }, [waypoints, pois.length, map]);
 
     return null;
 };
@@ -423,7 +420,7 @@ export function MapView(props: MapViewProps) {
   }, [altitudeAdaptationMode, pathType]);
   
   return (
-    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[350px]' : 'ml-0')}>
+    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[380px]' : 'ml-0')}>
         <div id="map" className="relative h-full w-full bg-gray-800">
             <MapContainer ref={mapRef} center={[42.5, 12.5]} zoom={6} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
               <TileLayer
