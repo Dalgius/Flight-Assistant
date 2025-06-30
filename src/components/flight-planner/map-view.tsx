@@ -287,9 +287,9 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
 
     const homeElevation = settings?.homeElevationMsl ?? 0;
     const altitudeRelToHome = waypoint.altitude;
-    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(1)} m`;
-    const aglText = waypoint.terrainElevationMSL !== null ? `${((homeElevation + altitudeRelToHome) - waypoint.terrainElevationMSL).toFixed(1)}m` : t('na');
-    const terrainElevText = waypoint.terrainElevationMSL !== null ? `${waypoint.terrainElevationMSL.toFixed(1)}m` : t('na');
+    const amslText = `${(homeElevation + altitudeRelToHome).toFixed(2)}m`;
+    const aglText = waypoint.terrainElevationMSL !== null ? `${((homeElevation + altitudeRelToHome) - waypoint.terrainElevationMSL).toFixed(2)}m` : t('na');
+    const terrainElevText = waypoint.terrainElevationMSL !== null ? `${waypoint.terrainElevationMSL.toFixed(2)}m` : t('na');
 
     return (
         <Marker
@@ -304,7 +304,7 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
                  <div className="text-xs leading-snug">
                     <strong className="text-sm">{t('popupWpTitle', {displayIndex})}</strong><br />
                     {t('popupLat')}: {waypoint.latlng.lat.toFixed(5)}, {t('popupLng')}: {waypoint.latlng.lng.toFixed(5)}<br />
-                    {t('popupFlightAlt')}: {altitudeRelToHome} m<br />
+                    {t('popupFlightAlt')}: {altitudeRelToHome.toFixed(2)} m<br />
                     {t('popupAmslAlt')}: {amslText}<br />
                     {t('popupAglAlt')}: {aglText}<br />
                     {t('popupTerrainElev')}: {terrainElevText}<br />
@@ -335,7 +335,7 @@ const PoiMarker = ({ poi }: { poi: POI }) => {
         },
     }), []);
     
-    const terrainElevText = poi.terrainElevationMSL !== null ? `${poi.terrainElevationMSL.toFixed(1)} m` : t('na');
+    const terrainElevText = poi.terrainElevationMSL !== null ? `${poi.terrainElevationMSL.toFixed(2)} m` : t('na');
 
     return (
         <Marker 
@@ -348,9 +348,9 @@ const PoiMarker = ({ poi }: { poi: POI }) => {
                 <div className="text-xs leading-snug">
                     <strong className="text-sm">{t('popupPoiTitle', { name: poi.name, id: poi.id })}</strong><br />
                     {t('popupLat')}: {poi.latlng.lat.toFixed(5)}, {t('popupLng')}: {poi.latlng.lng.toFixed(5)}<br />
-                    {t('popupFinalAmsl')}: {poi.altitude.toFixed(1)} m<br />
+                    {t('popupFinalAmsl')}: {poi.altitude.toFixed(2)} m<br />
                     {t('popupPoiTerrainElev')}: {terrainElevText}<br />
-                    {t('popupPoiObjectHeight')}: {poi.objectHeightAboveGround.toFixed(1)} m
+                    {t('popupPoiObjectHeight')}: {poi.objectHeightAboveGround.toFixed(2)} m
                 </div>
             </Popup>
         </Marker>
@@ -420,7 +420,7 @@ export function MapView(props: MapViewProps) {
   }, [altitudeAdaptationMode, pathType]);
   
   return (
-    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[380px]' : 'ml-0')}>
+    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[400px]' : 'ml-0')}>
         <div id="map" className="relative h-full w-full bg-gray-800">
             <MapContainer ref={mapRef} center={[42.5, 12.5]} zoom={6} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
               <TileLayer
