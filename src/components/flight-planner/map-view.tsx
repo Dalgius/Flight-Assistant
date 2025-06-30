@@ -126,7 +126,7 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
     );
 };
 
-const MapController = ({ waypoints, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
+const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { waypoints: Waypoint[], pois: POI[], isPanelOpen: boolean, selectedWaypointId: number | null }) => {
     const map = useMap();
 
     useEffect(() => {
@@ -135,15 +135,35 @@ const MapController = ({ waypoints, isPanelOpen, selectedWaypointId }: { waypoin
     }, [isPanelOpen, map]);
 
     useEffect(() => {
-        // Pan to the selected waypoint, but only when the ID changes.
-        // This prevents re-panning when waypoint data is edited.
-        if (selectedWaypointId) {
+        const allPoints = [...waypoints.map(w => w.latlng), ...pois.map(p => p.latlng)];
+
+        if (selectedWaypointId === null) {
+            // When nothing is selected (e.g., after loading a plan), fit to all points
+            if (allPoints.length > 0) {
+                map.fitBounds(L.latLngBounds(allPoints).pad(0.1));
+            }
+        } else {
             const wp = waypoints.find(w => w.id === selectedWaypointId);
             if (wp) {
+                // When a waypoint is selected from the list, pan to it
                 map.panTo(wp.latlng);
             }
         }
-    }, [selectedWaypointId, map]); // `waypoints` is intentionally omitted to prevent re-panning on data edits.
+    }, [selectedWaypointId, map]);
+
+    useEffect(() => {
+        const allPoints = [...waypoints.map(w => w.latlng), ...pois.map(p => p.latlng)];
+
+        if (allPoints.length === 1) {
+            // If there's only one point on the map, center on it with a reasonable zoom
+            map.setView(allPoints[0], 17);
+        } else if (allPoints.length > 1) {
+            // Do nothing, let user control zoom/pan, or let selection handle pan
+        } else {
+            // No points, set to default view
+            map.setView([42.5, 12.5], 6);
+        }
+    }, [waypoints.length, pois.length, map]);
 
     return null;
 };
@@ -307,8 +327,8 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
     );
 };
 
-const PoiMarker = ({ poi, onClick, onDragEnd }: any) => {
-    const markerRef = useRef(null);
+const PoiMarker = ({ poi }: { poi: POI }) => {
+    const markerRef = useRef<L.Marker>(null);
 
     const icon = L.divIcon({
         className: 'poi-marker',
@@ -318,12 +338,34 @@ const PoiMarker = ({ poi, onClick, onDragEnd }: any) => {
     });
     
     const eventHandlers = useMemo(() => ({
-        click() {
-            // POI selection logic can be added here
-        }
-    }), [poi.id, onClick]);
+        mouseover: (e: L.LeafletMouseEvent) => {
+            e.target.openPopup();
+        },
+        mouseout: (e: L.LeafletMouseEvent) => {
+            e.target.closePopup();
+        },
+    }), []);
+    
+    const terrainElevText = poi.terrainElevationMSL !== null ? `${poi.terrainElevationMSL.toFixed(1)} m` : "N/A";
 
-    return <Marker ref={markerRef} position={poi.latlng} icon={icon} eventHandlers={eventHandlers} />;
+    return (
+        <Marker 
+            ref={markerRef} 
+            position={poi.latlng} 
+            icon={icon} 
+            eventHandlers={eventHandlers}
+        >
+            <Popup autoPan={false}>
+                <div className="text-xs leading-snug">
+                    <strong className="text-sm">{poi.name} (ID: {poi.id})</strong><br />
+                    Lat: {poi.latlng.lat.toFixed(5)}, Lng: {poi.latlng.lng.toFixed(5)}<br />
+                    Final AMSL: {poi.altitude.toFixed(1)} m<br />
+                    Terrain Elev: {terrainElevText}<br />
+                    Object Height: {poi.objectHeightAboveGround.toFixed(1)} m
+                </div>
+            </Popup>
+        </Marker>
+    );
 };
 
 
@@ -402,6 +444,7 @@ export function MapView(props: MapViewProps) {
               <ScaleControl position="bottomleft" />
               <MapController 
                 waypoints={waypoints} 
+                pois={pois}
                 isPanelOpen={isPanelOpen} 
                 selectedWaypointId={selectedWaypointId}
               />
