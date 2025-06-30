@@ -87,11 +87,16 @@ function FlightPlannerUI() {
   }, []);
 
   useEffect(() => {
-    const suggestedAMSL = settings.homeElevationMsl + settings.defaultAltitude;
-    if (Math.round(suggestedAMSL) !== settings.desiredAMSL) {
-      updateSettings({ desiredAMSL: Math.round(suggestedAMSL) });
+    // Only auto-update desiredAMSL if not in AMSL mode (i.e., user is not controlling it directly)
+    if (settings.altitudeAdaptationMode === 'relative') {
+      const newDesiredAMSL = Math.round(settings.homeElevationMsl + settings.defaultAltitude);
+      // Only update if the value is different to avoid unnecessary re-renders
+      if (settings.desiredAMSL !== newDesiredAMSL) {
+          updateSettings({ desiredAMSL: newDesiredAMSL });
+      }
     }
-  }, [settings.homeElevationMsl, settings.defaultAltitude, settings.desiredAMSL, updateSettings]);
+  }, [settings.homeElevationMsl, settings.defaultAltitude, settings.altitudeAdaptationMode, settings.desiredAMSL, updateSettings]);
+
 
   const addWaypoint = useCallback(async (latlng: LatLng, options: Partial<Waypoint> & { isFromImport?: boolean } = {}) => {
     const isFirstWaypoint = waypoints.length === 0;
@@ -251,34 +256,35 @@ function FlightPlannerUI() {
   }, [poiCounter, toast, t]);
   
   useEffect(() => {
-    setWaypoints(prevWaypoints =>
-      prevWaypoints.map(wp => {
-        if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
-          const targetPoi = pois.find(p => p.id === wp.targetPoiId);
-          if (targetPoi) {
-            let waypointAMSL: number;
-            
-            if (settings.altitudeAdaptationMode === 'amsl') {
-                waypointAMSL = settings.desiredAMSL;
-            } else {
-                waypointAMSL = settings.homeElevationMsl + wp.altitude;
-            }
-
-            const poiAMSL = targetPoi.altitude;
-            const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
-            const newGimbalPitch = calculateRequiredGimbalPitch(
-              waypointAMSL,
-              poiAMSL,
-              horizontalDistance
-            );
-            if (wp.gimbalPitch !== newGimbalPitch) {
-              return { ...wp, gimbalPitch: newGimbalPitch };
-            }
-          }
-        }
-        return wp;
-      })
-    );
+    if (pois.length > 0) {
+        setWaypoints(prevWaypoints => {
+            let changed = false;
+            const newWaypoints = prevWaypoints.map(wp => {
+              if (wp.headingControl === 'poi_track' && wp.targetPoiId !== null) {
+                const targetPoi = pois.find(p => p.id === wp.targetPoiId);
+                if (targetPoi) {
+                  let waypointAMSL: number;
+                  if (settings.altitudeAdaptationMode === 'amsl') {
+                    waypointAMSL = settings.desiredAMSL;
+                  } else {
+                    waypointAMSL = settings.homeElevationMsl + wp.altitude;
+                  }
+      
+                  const poiAMSL = targetPoi.altitude;
+                  const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
+                  const newGimbalPitch = calculateRequiredGimbalPitch(waypointAMSL, poiAMSL, horizontalDistance);
+                  
+                  if (wp.gimbalPitch !== newGimbalPitch) {
+                    changed = true;
+                    return { ...wp, gimbalPitch: newGimbalPitch };
+                  }
+                }
+              }
+              return wp;
+            });
+            return changed ? newWaypoints : prevWaypoints;
+        });
+    }
   }, [pois, settings.homeElevationMsl, settings.altitudeAdaptationMode, settings.desiredAMSL]);
 
   const updatePoi = useCallback((id: number, updates: Partial<POI>) => {
