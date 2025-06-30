@@ -93,7 +93,7 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
                       <LocateFixed className="w-5 h-5 text-accent shrink-0" />
                       <div className="flex-1">
                         <p className="font-semibold">{poi.name}</p>
-                        <p className="text-xs text-muted-foreground">{t('finalAmsl')}: {poi.altitude.toFixed(1)}m</p>
+                        <p className="text-xs text-muted-foreground">{t('finalAmsl')}: {poi.altitude.toFixed(2)}m</p>
                       </div>
                       <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deletePoi(poi.id)}>
                         <Trash2 className="w-4 h-4" />
