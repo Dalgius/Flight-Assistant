@@ -26,7 +26,7 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
           <div className="space-y-2">
             <Label htmlFor="defaultAltitude" className="flex justify-between">
               <span>{t('defaultAltitudeLabel')} <span className="text-muted-foreground font-normal text-xs">{t('defaultAltitudeHint')}</span></span>
-              <span>{settings.defaultAltitude} m</span>
+              <span>{settings.defaultAltitude.toFixed(2)} m</span>
             </Label>
             <Slider
               id="defaultAltitude"
@@ -34,14 +34,14 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
               onValueChange={(value) => handleSettingsChange('defaultAltitude', value[0])}
               min={5}
               max={120}
-              step={1}
+              step={0.01}
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="flightSpeed" className="flex justify-between">
               <span>{t('flightSpeedLabel')}</span>
-              <span>{settings.flightSpeed.toFixed(1)} m/s</span>
+              <span>{settings.flightSpeed.toFixed(2)} m/s</span>
             </Label>
             <Slider
               id="flightSpeed"
