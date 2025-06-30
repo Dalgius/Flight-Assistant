@@ -22,7 +22,7 @@ const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSel
     isMultiSelected: boolean, 
     onMultiSelectToggle: (id: number) => void,
     settings: FlightPlanSettings,
-    t: (key: string) => string
+    t: (key: string, options?: any) => string
 }) => {
     
     const handleItemClick = (e: React.MouseEvent) => {
@@ -54,7 +54,7 @@ const WaypointItem = ({ waypoint, displayIndex, isSelected, onSelect, isMultiSel
           </div>
           <MapPin className="w-5 h-5 text-primary shrink-0" />
           <div className="flex-1 overflow-hidden">
-            <p className="font-semibold truncate">Waypoint {displayIndex}</p>
+            <p className="font-semibold truncate">{t('waypointItemTitle', { displayIndex })}</p>
             <div className="text-xs text-muted-foreground leading-tight space-y-0.5">
                 <div>{t('waypointRelAlt')}: {altitudeRelToHome.toFixed(1)}m</div>
                 <div>{t('waypointAmslAlt')}: {amslText}</div>
