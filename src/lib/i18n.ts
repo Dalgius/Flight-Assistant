@@ -257,7 +257,12 @@ export const translations: Translations = {
         "error_min_waypoints": "At least 2 waypoints are required for a mission.",
         "error_invalid_coordinates": "Invalid coordinates.",
         "error_altitude_range": "Altitude out of range (2-500m).",
-        "error_gimbal_range": "Gimbal pitch out of range (-90° to +60°)."
+        "error_gimbal_range": "Gimbal pitch out of range (-90° to +60°).",
+        "invalidTakeoffElev": "Invalid Takeoff Elevation. It must be a valid number.",
+        "invalidDesiredAgl": "Invalid Desired AGL. It must be a positive number.",
+        "invalidDesiredAmsl": "Invalid Desired AMSL. It must be a valid number.",
+        "invalidSurveyParams": "Invalid Survey Parameters. Please check altitude and overlap values.",
+        "invalidFacadeParams": "Invalid Facade Scan Parameters. Please check height and distance values."
     },
     it: {
         // General & Titles
@@ -512,6 +517,13 @@ export const translations: Translations = {
         "error_min_waypoints": "Sono necessari almeno 2 waypoint per una missione.",
         "error_invalid_coordinates": "Coordinate non valide.",
         "error_altitude_range": "Altitudine fuori range (2-500m).",
-        "error_gimbal_range": "Pitch del gimbal fuori range (-90° a +60°)."
+        "error_gimbal_range": "Pitch del gimbal fuori range (-90° a +60°).",
+        "invalidTakeoffElev": "Elevazione Decollo non valida. Deve essere un numero valido.",
+        "invalidDesiredAgl": "AGL Desiderato non valido. Deve essere un numero positivo.",
+        "invalidDesiredAmsl": "AMSL Desiderato non valido. Deve essere un numero valido.",
+        "invalidSurveyParams": "Parametri Rilievo non validi. Controllare altitudine e valori di sovrapposizione.",
+        "invalidFacadeParams": "Parametri Scansione Facciata non validi. Controllare valori di altezza e distanza."
     }
 };
+
+    
