@@ -60,3 +60,5 @@ export function SidePanel({ activePanel, onClose, ...props }: SidePanelProps) {
     </div>
   );
 }
+
+    
