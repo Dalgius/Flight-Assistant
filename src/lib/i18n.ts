@@ -169,7 +169,7 @@ export const translations: Translations = {
         "updateGrid": "Update Grid",
         "generateGrid": "Generate Grid",
 
-        // Map Popups
+        // Map Popups & Tooltips
         "popupWpTitle": "Waypoint {displayIndex}",
         "popupLat": "Lat",
         "popupLng": "Lng",
@@ -183,6 +183,9 @@ export const translations: Translations = {
         "popupFinalAmsl": "Final AMSL",
         "popupPoiTerrainElev": "Terrain Elev",
         "popupPoiObjectHeight": "Object Height",
+        "tooltipToggleSatellite": "Toggle Satellite View",
+        "tooltipFitToMission": "Fit to Mission",
+        "tooltipMyLocation": "My Location",
 
         // Toasts / Alerts
         "fetchingElevation": "Fetching Elevation...",
@@ -421,7 +424,7 @@ export const translations: Translations = {
         "updateGrid": "Aggiorna Griglia",
         "generateGrid": "Genera Griglia",
         
-        // Map Popups
+        // Map Popups & Tooltips
         "popupWpTitle": "Waypoint {displayIndex}",
         "popupLat": "Lat",
         "popupLng": "Lng",
@@ -435,6 +438,9 @@ export const translations: Translations = {
         "popupFinalAmsl": "AMSL Finale",
         "popupPoiTerrainElev": "Elev Terreno",
         "popupPoiObjectHeight": "H Oggetto",
+        "tooltipToggleSatellite": "Commuta Vista Satellitare",
+        "tooltipFitToMission": "Adatta alla Missione",
+        "tooltipMyLocation": "La Mia Posizione",
 
         // Toasts / Alerts
         "fetchingElevation": "Recupero elevazione...",
