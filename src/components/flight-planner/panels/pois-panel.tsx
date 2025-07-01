@@ -24,20 +24,19 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
   const handlePoiUpdate = (poiId: number, field: 'objectHeightAboveGround' | 'terrainElevationMSL', value: string) => {
     const poi = pois.find(p => p.id === poiId);
     if (!poi) return;
-    const numValue = parseFloat(value);
-    if (isNaN(numValue) && value !== '') return;
-
-    const newPoi = { ...poi };
     
-    if (field === 'objectHeightAboveGround') {
-        newPoi.objectHeightAboveGround = isNaN(numValue) ? 0 : numValue;
-    } else if (field === 'terrainElevationMSL') {
-        newPoi.terrainElevationMSL = isNaN(numValue) ? null : numValue;
-    }
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return; // Or handle error
+    
+    const newPoiData: Partial<POI> = { [field]: numValue };
+    
+    // Also update final altitude based on the change
+    const currentHeight = (field === 'objectHeightAboveGround') ? numValue : poi.objectHeightAboveGround;
+    const currentElev = (field === 'terrainElevationMSL') ? numValue : poi.terrainElevationMSL;
+    newPoiData.altitude = (currentElev ?? 0) + currentHeight;
 
-    newPoi.altitude = (newPoi.terrainElevationMSL ?? 0) + newPoi.objectHeightAboveGround;
-    updatePoi(poiId, newPoi);
-  }
+    updatePoi(poiId, newPoiData);
+  };
 
   return (
     <div className="space-y-6">
@@ -148,3 +147,5 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
     </div>
   );
 }
+
+    
