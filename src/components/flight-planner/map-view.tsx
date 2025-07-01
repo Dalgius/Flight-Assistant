@@ -135,23 +135,6 @@ const MapController = ({ waypoints, pois, isPanelOpen, selectedWaypointId }: { w
         setTimeout(() => map.invalidateSize(), 310);
     }, [isPanelOpen, map]);
 
-    useEffect(() => {
-        if (!selectedWaypointId) return;
-
-        const wp = waypoints.find(w => w.id === selectedWaypointId);
-        if (wp) {
-            // When a waypoint is selected from the list, pan to it
-            map.panTo(wp.latlng);
-        }
-    }, [selectedWaypointId, map]);
-
-
-    useEffect(() => {
-        if (waypoints.length === 1 && pois.length === 0) {
-            map.setView(waypoints[0].latlng, 17);
-        }
-    }, [waypoints, pois.length, map]);
-
     return null;
 };
 
@@ -374,7 +357,7 @@ interface MapViewProps {
 }
 
 const satelliteLayer = {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   attribution: 'Tiles &copy; Esri',
   maxZoom: 25,
   maxNativeZoom: 21,
@@ -391,6 +374,7 @@ export function MapView(props: MapViewProps) {
   const { isPanelOpen, waypoints, pois, pathType, altitudeAdaptationMode, settings, selectedWaypointId, multiSelectedWaypointIds, drawingState, onMapClick, onMarkerClick, onMarkerDragEnd } = props;
   const [isSatelliteView, setIsSatelliteView] = useState(false);
   const mapRef = useRef<L.Map>(null);
+  const { t } = useTranslation();
 
   const toggleSatellite = () => setIsSatelliteView(prev => !prev);
   const currentLayer = isSatelliteView ? satelliteLayer : defaultLayer;
@@ -420,7 +404,7 @@ export function MapView(props: MapViewProps) {
   }, [altitudeAdaptationMode, pathType]);
   
   return (
-    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[400px]' : 'ml-0')}>
+    <div className={cn('flex-1 h-full transition-all duration-300 ease-in-out', isPanelOpen ? 'ml-[450px]' : 'ml-0')}>
         <div id="map" className="relative h-full w-full bg-gray-800">
             <MapContainer ref={mapRef} center={[42.5, 12.5]} zoom={6} scrollWheelZoom={true} style={{ height: '100%', width: '100%', zIndex: 0 }}>
               <TileLayer
@@ -466,15 +450,15 @@ export function MapView(props: MapViewProps) {
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={toggleSatellite}><Layers className="w-5 h-5" /></Button></TooltipTrigger>
-                        <TooltipContent><p>Toggle Satellite View</p></TooltipContent>
+                        <TooltipContent><p>{t('tooltipToggleSatellite')}</p></TooltipContent>
                     </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => { if (mapRef.current && pathCoords.length > 0) mapRef.current.fitBounds(L.latLngBounds(pathCoords).pad(0.1)); }}><ZoomIn className="w-5 h-5" /></Button></TooltipTrigger>
-                        <TooltipContent><p>Fit to Mission</p></TooltipContent>
+                        <TooltipContent><p>{t('tooltipFitToMission')}</p></TooltipContent>
                     </Tooltip>
                     <Tooltip>
                         <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => mapRef.current?.locate()}><LocateFixed className="w-5 h-5" /></Button></TooltipTrigger>
-                        <TooltipContent><p>My Location</p></TooltipContent>
+                        <TooltipContent><p>{t('tooltipMyLocation')}</p></TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
             </div>
