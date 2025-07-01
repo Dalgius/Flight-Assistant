@@ -73,3 +73,5 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
     </div>
   );
 }
+
+    
