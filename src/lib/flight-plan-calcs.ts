@@ -9,8 +9,21 @@ export const CAMERA_CONSTANTS = {
     focalLength_mm: 6.88,
 };
 
+// Upper bound for auto-generated missions, protects the browser from runaway loops.
+export const MAX_GENERATED_WAYPOINTS = 2000;
+
 export function toRad(degrees: number): number {
     return degrees * Math.PI / 180;
+}
+
+// Maps any heading in degrees to the WPML range [-180, 180].
+export function normalizeHeading(degrees: number): number {
+    const h = ((degrees % 360) + 360) % 360;
+    return h > 180 ? h - 360 : h;
+}
+
+export function isValidOverlap(overlap: number): boolean {
+    return Number.isFinite(overlap) && overlap >= 0 && overlap < 100;
 }
 
 export function haversineDistance(coords1: LatLng, coords2: LatLng): number {
@@ -163,9 +176,10 @@ export function generateSurveyGridWaypoints(
     
     const MIN_POLYGON_POINTS = 3;
     if (!polygonLatLngs || polygonLatLngs.length < MIN_POLYGON_POINTS) return [];
+    if (!isValidOverlap(sidelap) || !isValidOverlap(frontlap) || !Number.isFinite(angle)) return [];
     
     const footprint = calculateFootprint(altitude);
-    if (footprint.width === 0 || footprint.height === 0) return [];
+    if (!(footprint.width > 0) || !(footprint.height > 0)) return [];
 
     const fixedGridHeading = angle;
     const rotationAngleDeg = -(fixedGridHeading); 
@@ -184,12 +198,18 @@ export function generateSurveyGridWaypoints(
     });
     
     const lineSpacingRotLng = (actualLineSpacing / (R_EARTH * Math.cos(toRad(rotationCenter.lat)))) * (180 / Math.PI);
+    const photoSpacingRotLat = (actualDistanceBetweenPhotos / R_EARTH) * (180 / Math.PI);
+    if (!(lineSpacingRotLng > 0) || !(photoSpacingRotLat > 0)) return [];
+
+    // Candidate points over the bounding box: an upper bound on the generated waypoints.
+    const estimatedCandidates = ((maxLng - minLng) / lineSpacingRotLng + 2) * ((maxLat - minLat) / photoSpacingRotLat + 1);
+    if (estimatedCandidates > MAX_GENERATED_WAYPOINTS * 4) return [];
+
     let currentRotLng = minLng;
     let scanDir = 1;
     const finalWaypointsData: GeneratedWaypointData[] = [];
 
     while (currentRotLng <= maxLng + lineSpacingRotLng * 0.5) {
-        const photoSpacingRotLat = (actualDistanceBetweenPhotos / R_EARTH) * (180 / Math.PI);
         const lineCandRot = [];
 
         if (scanDir === 1) { 
@@ -227,7 +247,7 @@ export function generateSurveyGridWaypoints(
             seenKeys.add(key);
         }
     }
-    return uniqueWaypoints;
+    return uniqueWaypoints.length > MAX_GENERATED_WAYPOINTS ? [] : uniqueWaypoints;
 }
 
 export function generateFacadeWaypoints(
@@ -247,13 +267,17 @@ export function generateFacadeWaypoints(
     const verticalFootprint = (sensorHeight_mm / focalLength_mm) * distance;
     const horizontalFootprint = (sensorWidth_mm / focalLength_mm) * distance;
     
+    if (!(distance > 0) || !isValidOverlap(horizontalOverlap) || !isValidOverlap(verticalOverlap)) return [];
+
     const verticalStep = verticalFootprint * (1 - verticalOverlap / 100);
     const horizontalStep = horizontalFootprint * (1 - horizontalOverlap / 100);
+    if (!(verticalStep > 0) || !(horizontalStep > 0)) return [];
 
     const facadeLength = haversineDistance(startPoint, endPoint);
     
     const numHorizontalPoints = facadeLength > 0 ? Math.floor(facadeLength / horizontalStep) + 1 : 1;
     const numVerticalPoints = maxHeight > minHeight ? Math.floor((maxHeight - minHeight) / verticalStep) + 1 : 1;
+    if (numHorizontalPoints * numVerticalPoints > MAX_GENERATED_WAYPOINTS) return [];
     
     let scanDirection = 1;
     const finalWaypointsData: GeneratedWaypointData[] = [];
@@ -398,27 +422,70 @@ export function validateFlightPlanForImport(plan: any): string[] {
     return errors;
 }
 
-export function validateFlightPlanForWpml(waypoints: Waypoint[]): string[] {
-    const errors: string[] = [];
-    if (!waypoints || waypoints.length < 2) {
-        errors.push("error_min_waypoints");
-    }
-    const djiAltitudeMin = 2;
-    const djiAltitudeMax = 500;
+export interface WpmlValidationIssue {
+    key: string;
+    params?: { [key: string]: string | number };
+}
 
-    waypoints.forEach((wp, i) => {
+export const DJI_ALTITUDE_MIN = 2;
+export const DJI_ALTITUDE_MAX = 500;
+export const MIN_TERRAIN_CLEARANCE_M = 2;
+export const LOW_TERRAIN_CLEARANCE_M = 10;
+export const MAX_LEGAL_HEIGHT_M = 120;
+
+// Errors block the export; warnings are shown but the export proceeds.
+export function validateFlightPlanForWpml(waypoints: Waypoint[], homeElevationMsl: number): { errors: WpmlValidationIssue[]; warnings: WpmlValidationIssue[] } {
+    const errors: WpmlValidationIssue[] = [];
+    const warnings: WpmlValidationIssue[] = [];
+    if (!waypoints || waypoints.length < 2) {
+        errors.push({ key: "error_min_waypoints" });
+    }
+    if (!Number.isFinite(homeElevationMsl)) {
+        errors.push({ key: "invalidTakeoffElev" });
+        return { errors, warnings };
+    }
+
+    const invalidCoords: number[] = [];
+    const altitudeOutOfRange: number[] = [];
+    const gimbalOutOfRange: number[] = [];
+    const belowTerrain: number[] = [];
+    const lowClearance: number[] = [];
+    const aboveLegalHeight: number[] = [];
+    const unknownTerrain: number[] = [];
+
+    (waypoints || []).forEach((wp, i) => {
+        const n = i + 1;
         if (!wp.latlng || !validateCoordinates(wp.latlng.lat, wp.latlng.lng)) {
-            errors.push(`error_invalid_coordinates`);
+            invalidCoords.push(n);
         }
-        if (typeof wp.altitude !== 'number' || wp.altitude < djiAltitudeMin || wp.altitude > djiAltitudeMax) {
-            errors.push(`error_altitude_range`);
+        if (typeof wp.altitude !== 'number' || !Number.isFinite(wp.altitude) || wp.altitude < DJI_ALTITUDE_MIN || wp.altitude > DJI_ALTITUDE_MAX) {
+            altitudeOutOfRange.push(n);
+            return;
         }
         if (wp.gimbalPitch !== undefined && !validateGimbalPitch(wp.gimbalPitch)) {
-            errors.push(`error_gimbal_range`);
+            gimbalOutOfRange.push(n);
+        }
+        if (typeof wp.terrainElevationMSL === 'number' && Number.isFinite(wp.terrainElevationMSL)) {
+            const agl = homeElevationMsl + wp.altitude - wp.terrainElevationMSL;
+            if (agl < MIN_TERRAIN_CLEARANCE_M) belowTerrain.push(n);
+            else if (agl < LOW_TERRAIN_CLEARANCE_M) lowClearance.push(n);
+            if (agl > MAX_LEGAL_HEIGHT_M) aboveLegalHeight.push(n);
+        } else {
+            unknownTerrain.push(n);
+            if (wp.altitude > MAX_LEGAL_HEIGHT_M) aboveLegalHeight.push(n);
         }
     });
-    
-    return errors;
+
+    const wps = (list: number[]) => list.length > 8 ? `${list.slice(0, 8).join(', ')}…` : list.join(', ');
+    if (invalidCoords.length) errors.push({ key: "error_invalid_coordinates", params: { wps: wps(invalidCoords) } });
+    if (altitudeOutOfRange.length) errors.push({ key: "error_altitude_range", params: { wps: wps(altitudeOutOfRange) } });
+    if (gimbalOutOfRange.length) errors.push({ key: "error_gimbal_range", params: { wps: wps(gimbalOutOfRange) } });
+    if (belowTerrain.length) errors.push({ key: "error_terrain_clearance", params: { wps: wps(belowTerrain), min: MIN_TERRAIN_CLEARANCE_M } });
+    if (lowClearance.length) warnings.push({ key: "warning_low_clearance", params: { wps: wps(lowClearance), min: LOW_TERRAIN_CLEARANCE_M } });
+    if (aboveLegalHeight.length) warnings.push({ key: "warning_above_legal_height", params: { wps: wps(aboveLegalHeight), max: MAX_LEGAL_HEIGHT_M } });
+    if (unknownTerrain.length) warnings.push({ key: "warning_unknown_terrain", params: { count: unknownTerrain.length } });
+
+    return { errors, warnings };
 }
 
 export function calculateMissionDuration(waypoints: Waypoint[], speed: number): number {
