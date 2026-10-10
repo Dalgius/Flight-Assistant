@@ -18,8 +18,10 @@ export function StatsPanel({ flightStats }: PanelProps) {
   const { t } = useTranslation();
   
   const formatDuration = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = Math.round(totalSeconds % 60);
+    // Round first, so 119.6 s becomes "2 min 0 sec" and not "1 min 60 sec".
+    const roundedSeconds = Math.round(totalSeconds);
+    const mins = Math.floor(roundedSeconds / 60);
+    const secs = roundedSeconds % 60;
     return t('flightTimeFormat', { mins, secs });
   }
   

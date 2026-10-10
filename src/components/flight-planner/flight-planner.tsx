@@ -201,8 +201,16 @@ function FlightPlannerUI() {
     }
   }, [waypoints, applyHomeElevationChange]);
 
+  // Keeps missions in sync with deleted waypoints; a mission left without waypoints is removed.
+  const removeWaypointsFromMissions = useCallback((deletedIds: Set<number>) => {
+    setMissions(prev => prev
+      .map(m => ({ ...m, waypointIds: m.waypointIds.filter(id => !deletedIds.has(id)) }))
+      .filter(m => m.waypointIds.length > 0));
+  }, []);
+
   const deleteWaypoint = useCallback((id: number) => {
     setWaypoints(prev => prev.filter(wp => wp.id !== id));
+    removeWaypointsFromMissions(new Set([id]));
     if (selectedWaypointId === id) {
         setSelectedWaypointId(null);
     }
@@ -211,20 +219,21 @@ function FlightPlannerUI() {
       newSet.delete(id);
       return newSet;
     });
-  }, [selectedWaypointId]);
+  }, [selectedWaypointId, removeWaypointsFromMissions]);
 
   const deleteMultiSelectedWaypoints = useCallback(() => {
     if (multiSelectedWaypointIds.size === 0) return;
     const count = multiSelectedWaypointIds.size;
-    
+
     setWaypoints(prev => prev.filter(wp => !multiSelectedWaypointIds.has(wp.id)));
+    removeWaypointsFromMissions(multiSelectedWaypointIds);
     setMultiSelectedWaypointIds(new Set());
-    
+
     toast({
       title: t('waypointsDeleted'),
       description: t('waypointsRemoved', { count })
     });
-  }, [multiSelectedWaypointIds, toast, t]);
+  }, [multiSelectedWaypointIds, toast, t, removeWaypointsFromMissions]);
 
   const selectWaypoint = useCallback((id: number | null) => {
     if (id !== null && multiSelectedWaypointIds.size > 0) {
@@ -1071,30 +1080,21 @@ const handleGenerateFacadeScan = useCallback(async () => {
     const zip = new JSZip();
     zip.folder("wpmz")?.file("template.kml", templateKml).file("waylines.wpml", waylinesWpml);
     zip.generateAsync({ type: "blob", mimeType: "application/vnd.google-earth.kmz" })
-        .then(blob => downloadFile(`flight_plan_dji_${waylineIdInt}.kmz`, blob, 'application/vnd.google-earth.kmz'))
+        .then(blob => {
+            downloadFile(`flight_plan_dji_${waylineIdInt}.kmz`, blob, 'application/vnd.google-earth.kmz');
+            // Warnings go in this toast: only one toast is visible at a time.
+            toast({ title: t('exportedToKmz'), description: validationWarnings.length > 0 ? `${t('warning')}: ${formatIssues(validationWarnings)}` : undefined });
+        })
         .catch(err => toast({ variant: 'destructive', title: t('kmzGenError'), description: err.message }));
-    // Warnings go in this toast: only one toast is visible at a time.
-    toast({ title: t('exportedToKmz'), description: validationWarnings.length > 0 ? `${t('warning')}: ${formatIssues(validationWarnings)}` : undefined });
   };
 
 
-  const flightStats: FlightStatistics = useMemo(() => {
-    let totalDistance = 0;
-    if (waypoints.length > 1) {
-      for (let i = 0; i < waypoints.length - 1; i++) {
-        totalDistance += haversineDistance(waypoints[i].latlng, waypoints[i+1].latlng);
-      }
-    }
-    const totalHover = waypoints.reduce((sum, wp) => sum + (wp.hoverTime || 0), 0);
-    const flightTime = (totalDistance / (settings.flightSpeed > 0 ? settings.flightSpeed : 1)) + totalHover;
-
-    return {
-      totalDistance,
-      flightTime,
-      waypointCount: waypoints.length,
-      poiCount: pois.length,
-    };
-  }, [waypoints, pois.length, settings.flightSpeed]);
+  const flightStats: FlightStatistics = useMemo(() => ({
+    totalDistance: calculateMissionDistance(waypoints),
+    flightTime: calculateMissionDuration(waypoints, settings.flightSpeed),
+    waypointCount: waypoints.length,
+    poiCount: pois.length,
+  }), [waypoints, pois.length, settings.flightSpeed]);
 
   const handleMapClick = (latlng: LatLng, event: any) => {
     if (drawingState.mode) return;

@@ -48,7 +48,7 @@ export function SettingsPanel({ settings, updateSettings }: PanelProps) {
               value={[settings.flightSpeed]}
               onValueChange={(value) => handleSettingsChange('flightSpeed', value[0])}
               min={1}
-              max={17}
+              max={15} // WPML waypoint speed limit
               step={0.1}
             />
           </div>

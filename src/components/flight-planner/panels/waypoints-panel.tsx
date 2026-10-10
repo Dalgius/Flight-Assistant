@@ -89,14 +89,15 @@ const SingleWaypointEditor = ({ waypoint, displayIndex, pois, updateWaypoint, de
                 <div className="space-y-2">
                     <Label htmlFor={`altitude-slider-${waypoint.id}`}>{t('altitudeLabel')}</Label>
                     <div className="flex items-center gap-4">
-                        <Slider id={`altitude-slider-${waypoint.id}`} value={[waypoint.altitude]} onValueChange={([val]) => handleUpdate('altitude', val)} max={120} step={0.01} />
+                        {/* Bounds widen to the current value: terrain-derived altitudes can be outside 0-120 m and must not be clamped. */}
+                        <Slider id={`altitude-slider-${waypoint.id}`} value={[waypoint.altitude]} onValueChange={([val]) => handleUpdate('altitude', val)} min={Math.min(0, Math.floor(waypoint.altitude))} max={Math.max(120, Math.ceil(waypoint.altitude))} step={0.01} />
                         <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.altitude.toFixed(2)} m</span>
                     </div>
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor={`gimbal-slider-${waypoint.id}`}>{t('gimbalPitchLabel')}</Label>
                     <div className="flex items-center gap-4">
-                        <Slider id={`gimbal-slider-${waypoint.id}`} value={[waypoint.gimbalPitch]} onValueChange={([val]) => handleUpdate('gimbalPitch', val)} min={-90} max={30} step={1} />
+                        <Slider id={`gimbal-slider-${waypoint.id}`} value={[waypoint.gimbalPitch]} onValueChange={([val]) => handleUpdate('gimbalPitch', val)} min={-90} max={60} step={1} />
                         <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{waypoint.gimbalPitch}°</span>
                     </div>
                 </div>
@@ -254,7 +255,7 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                     <Label htmlFor="applyGimbal" className="cursor-pointer flex-1">{t('gimbalPitchLabel')}</Label>
                 </div>
                 <div className="flex items-center gap-4 pl-6">
-                    <Slider disabled={!apply.gimbalPitch} value={[updates.gimbalPitch ?? 0]} onValueChange={([val]) => handleValueChange('gimbalPitch', val)} min={-90} max={30} step={1} />
+                    <Slider disabled={!apply.gimbalPitch} value={[updates.gimbalPitch ?? 0]} onValueChange={([val]) => handleValueChange('gimbalPitch', val)} min={-90} max={60} step={1} />
                     <span className="w-16 shrink-0 text-right font-mono text-sm text-muted-foreground">{updates.gimbalPitch ?? 0}°</span>
                 </div>
             </div>
