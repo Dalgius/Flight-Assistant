@@ -5,7 +5,8 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
 import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData, SurveyMission, FlightPlan } from '@/components/flight-planner/types';
-import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, destinationPoint, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints, getElevationsBatch, validateFlightPlanForImport, validateFlightPlanForWpml, calculateMissionDuration, calculateMissionDistance, normalizeHeading, isValidOverlap, DJI_ALTITUDE_MIN, MIN_TERRAIN_CLEARANCE_M, type WpmlValidationIssue } from '@/lib/flight-plan-calcs';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, destinationPoint, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints, getElevationsBatch, validateFlightPlanForWpml, calculateMissionDuration, calculateMissionDistance, normalizeHeading, isValidOverlap, escapeXml, getPoiAmsl, replaceMissionWaypoints, DJI_ALTITUDE_MIN, MIN_TERRAIN_CLEARANCE_M, type WpmlValidationIssue } from '@/lib/flight-plan-calcs';
+import { DEFAULT_SETTINGS, parseFlightPlan } from '@/lib/flight-plan-schema';
 import JSZip from 'jszip';
 
 import { ActionBar } from '@/components/flight-planner/action-bar';
@@ -16,6 +17,10 @@ import { FacadeScanDialog } from '@/components/flight-planner/dialogs/facade-sca
 import { Skeleton } from '@/components/ui/skeleton';
 import { TranslationProvider, useTranslation } from '@/hooks/use-translation';
 
+// WPML takeOffSecurityHeight: height reached right after takeoff before flying to WP1.
+const TAKEOFF_SECURITY_HEIGHT_M = 20;
+// Only these values may be written as a WPML actuator function.
+const KMZ_CAMERA_ACTIONS = new Set<string>(['takePhoto', 'startRecord', 'stopRecord']);
 
 function FlightPlannerUI() {
   const { t } = useTranslation();
@@ -26,22 +31,19 @@ function FlightPlannerUI() {
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
   const [pois, setPois] = useState<POI[]>([]);
   const [missions, setMissions] = useState<SurveyMission[]>([]);
-  const [settings, setSettings] = useState<FlightPlanSettings>({
-    defaultAltitude: 50,
-    flightSpeed: 2.5,
-    pathType: 'curved',
-    homeElevationMsl: 0,
-    altitudeAdaptationMode: 'relative',
-    desiredAGL: 50,
-    desiredAMSL: 100,
-  });
-  
+  const [settings, setSettings] = useState<FlightPlanSettings>(DEFAULT_SETTINGS);
+
   const [selectedWaypointId, setSelectedWaypointId] = useState<number | null>(null);
   const [multiSelectedWaypointIds, setMultiSelectedWaypointIds] = useState<Set<number>>(new Set());
-  
-  const [waypointCounter, setWaypointCounter] = useState(1);
-  const [poiCounter, setPoiCounter] = useState(1);
-  const [missionCounter, setMissionCounter] = useState(1);
+
+  // IDs are reserved synchronously through a ref: async handlers that await
+  // elevation data would otherwise read the same counter from their closure.
+  const nextIdsRef = useRef({ waypoint: 1, poi: 1, mission: 1 });
+  const allocateIds = useCallback((kind: 'waypoint' | 'poi' | 'mission', count = 1) => {
+    const first = nextIdsRef.current[kind];
+    nextIdsRef.current[kind] += count;
+    return first;
+  }, []);
 
   const [editingMissionId, setEditingMissionId] = useState<number | null>(null);
 
@@ -139,28 +141,13 @@ function FlightPlannerUI() {
   }, [settings.homeElevationMsl, settings.defaultAltitude, settings.altitudeAdaptationMode, settings.desiredAMSL, updateSettings]);
 
 
-  const addWaypoint = useCallback(async (latlng: LatLng, options: Partial<Waypoint> & { isFromImport?: boolean } = {}) => {
+  const addWaypoint = useCallback(async (latlng: LatLng, options: Partial<Waypoint> = {}) => {
     const isFirstWaypoint = waypoints.length === 0;
-    let terrainElevation: number | null = null;
-    
-    if (isFirstWaypoint && !options.isFromImport) {
-      toast({ title: t('fetchingElevation'), description: t('gettingTakeoffElevation') });
-      const elevations = await getElevationsBatch([latlng]);
-      if (elevations && elevations.length > 0 && elevations[0] !== null) {
-        terrainElevation = elevations[0];
-        setSettings(prev => ({
-          ...prev,
-          homeElevationMsl: terrainElevation!,
-          altitudeAdaptationMode: 'relative'
-        }));
-        toast({ title: t('successTitle'), description: t('takeoffElevationSuccess', { elev: terrainElevation.toFixed(2) }) });
-      } else {
-        toast({ variant: "destructive", title: t('warning'), description: t('takeoffElevationFailure') });
-      }
-    }
 
+    // The waypoint is added right away, so a quick second click cannot get ahead
+    // of the takeoff point while its elevation is being fetched.
     const newWaypoint: Waypoint = {
-        id: options.id ?? waypointCounter,
+        id: options.id ?? allocateIds('waypoint'),
         latlng: latlng,
         altitude: options.altitude ?? settings.defaultAltitude,
         hoverTime: options.hoverTime ?? 0,
@@ -169,15 +156,30 @@ function FlightPlannerUI() {
         fixedHeading: options.fixedHeading || 0,
         cameraAction: options.cameraAction || 'none',
         targetPoiId: options.targetPoiId || null,
-        terrainElevationMSL: options.terrainElevationMSL ?? terrainElevation,
-        waypointType: options.waypointType || 'generic' 
+        terrainElevationMSL: options.terrainElevationMSL ?? null,
+        waypointType: options.waypointType || 'generic'
     };
     setWaypoints(prev => [...prev, newWaypoint]);
-    if (!options.isFromImport) {
-      setWaypointCounter(prev => prev + 1);
-      selectWaypoint(newWaypoint.id);
+    selectWaypoint(newWaypoint.id);
+
+    if (isFirstWaypoint) {
+      toast({ title: t('fetchingElevation'), description: t('gettingTakeoffElevation') });
+      const elevations = await getElevationsBatch([latlng]);
+      const terrainElevation = elevations[0] ?? null;
+      if (terrainElevation !== null) {
+        settingsRef.current = { ...settingsRef.current, homeElevationMsl: terrainElevation, altitudeAdaptationMode: 'relative' };
+        setSettings(prev => ({
+          ...prev,
+          homeElevationMsl: terrainElevation,
+          altitudeAdaptationMode: 'relative'
+        }));
+        setWaypoints(prev => prev.map(wp => wp.id === newWaypoint.id ? { ...wp, terrainElevationMSL: terrainElevation } : wp));
+        toast({ title: t('successTitle'), description: t('takeoffElevationSuccess', { elev: terrainElevation.toFixed(2) }) });
+      } else {
+        toast({ variant: "destructive", title: t('warning'), description: t('takeoffElevationFailure') });
+      }
     }
-  }, [settings, waypointCounter, waypoints.length, toast, t]);
+  }, [settings, waypoints.length, toast, t, allocateIds]);
 
   const updateWaypoint = useCallback(async (id: number, updates: Partial<Waypoint>) => {
     let newHomeElevation: number | null = null;
@@ -263,37 +265,33 @@ function FlightPlannerUI() {
     setMissions([]);
     setSelectedWaypointId(null);
     setMultiSelectedWaypointIds(new Set());
-    setWaypointCounter(1);
-    setPoiCounter(1);
-    setMissionCounter(1);
+    nextIdsRef.current = { waypoint: 1, poi: 1, mission: 1 };
     toast({ title: t('missionCleared'), description: t('allCleared') });
   }, [toast, t]);
 
-  const addPoi = useCallback(async (latlng: LatLng, name: string, objectHeight: number, options: Partial<POI> & { isFromImport?: boolean } = {}) => {
+  const addPoi = useCallback(async (latlng: LatLng, name: string, objectHeight: number, options: Partial<POI> = {}) => {
+    const id = options.id ?? allocateIds('poi');
     const newPoi: POI = {
-        id: options.id ?? poiCounter,
-        name: name || `POI ${options.id ?? poiCounter}`,
+        id,
+        name: name || `POI ${id}`,
         latlng,
         objectHeightAboveGround: objectHeight,
         terrainElevationMSL: options.terrainElevationMSL ?? null,
         altitude: (options.terrainElevationMSL ?? 0) + objectHeight,
     };
-    
-    if (!options.isFromImport && newPoi.terrainElevationMSL === null) {
-      const elevations = await getElevationsBatch([latlng]);
-      if (elevations && elevations.length > 0 && elevations[0] !== null) {
-        newPoi.terrainElevationMSL = elevations[0];
-        newPoi.altitude = newPoi.terrainElevationMSL + newPoi.objectHeightAboveGround;
-      } else {
-        toast({ variant: "destructive", title: t('warning'), description: t('poiElevationFailure', { name: newPoi.name }) });
-      }
-    }
-
     setPois(prev => [...prev, newPoi]);
-    if (!options.isFromImport) {
-        setPoiCounter(prev => prev + 1);
+    if (newPoi.terrainElevationMSL !== null) return;
+
+    const elevations = await getElevationsBatch([latlng]);
+    const terrainElevation = elevations[0] ?? null;
+    if (terrainElevation !== null) {
+      setPois(prev => prev.map(p => p.id === id
+        ? { ...p, terrainElevationMSL: terrainElevation, altitude: terrainElevation + p.objectHeightAboveGround }
+        : p));
+    } else {
+      toast({ variant: "destructive", title: t('warning'), description: t('poiElevationFailure', { name: newPoi.name }) });
     }
-  }, [poiCounter, toast, t]);
+  }, [toast, t, allocateIds]);
   
   useEffect(() => {
     const poiTrackingWps = waypoints.filter(wp => wp.headingControl === 'poi_track');
@@ -312,7 +310,7 @@ function FlightPlannerUI() {
                 ? settings.desiredAMSL
                 : settings.homeElevationMsl + wp.altitude;
             
-            const poiAMSL = targetPoi.altitude;
+            const poiAMSL = getPoiAmsl(targetPoi, settings.homeElevationMsl);
             const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
             const newGimbalPitch = calculateRequiredGimbalPitch(waypointAMSL, poiAMSL, horizontalDistance);
 
@@ -403,11 +401,11 @@ function FlightPlannerUI() {
     if (home === null) return;
     const orbitWpAMSL = home.elevation + altitudeRelToHome;
 
-    const poiAMSL = centerPoi.altitude;
+    const poiAMSL = getPoiAmsl(centerPoi, home.elevation);
 
     const calculatedGimbalPitch = calculateRequiredGimbalPitch(orbitWpAMSL, poiAMSL, radius);
 
-    let currentWpCounter = waypointCounter;
+    let currentWpCounter = allocateIds('waypoint', numPoints);
     const newWaypoints: Waypoint[] = [];
     for (let i = 0; i < numPoints; i++) {
         const angle = (i / numPoints) * 2 * Math.PI;
@@ -453,27 +451,25 @@ function FlightPlannerUI() {
         };
 
         setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
-        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        setWaypoints(prev => replaceMissionWaypoints(prev, oldWaypointIds, newWaypoints));
         toast({ title: t('orbitUpdated'), description: t('orbitUpdatedSuccess', { numPoints: newWaypoints.length, poiName: centerPoi.name }) });
     } else {
         const newMission: SurveyMission = {
-            id: missionCounter,
+            id: allocateIds('mission'),
             name: missionName,
             type: 'Orbit',
             waypointIds: newWaypoints.map(wp => wp.id),
             parameters: { poiId: centerPoi.id, radius, numPoints },
         };
         setMissions(prev => [...prev, newMission]);
-        setMissionCounter(prev => prev + 1);
         setWaypoints(prev => [...prev, ...newWaypoints]);
         toast({ title: t('orbitCreated'), description: `${t('orbitCreatedSuccess', { numPoints, poiName: centerPoi.name })} ${home.notice}`.trim() });
     }
 
-    setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
     setEditingMissionId(null);
 
-  }, [pois, settings, waypointCounter, toast, orbitParams, missionCounter, editingMissionId, missions, t, resolveHomeElevationForMission]);
+  }, [pois, settings, toast, orbitParams, editingMissionId, missions, t, resolveHomeElevationForMission, allocateIds]);
 
   const handleCreateSurveyGrid = useCallback(async () => {
     const { altitude, sidelap, frontlap, angle } = surveyParams;
@@ -506,7 +502,7 @@ function FlightPlannerUI() {
     if (home === null) return;
     const homeElevation = home.elevation;
 
-    let currentWpCounter = waypointCounter;
+    let currentWpCounter = allocateIds('waypoint', waypointsData.length);
     const newWaypoints: Waypoint[] = waypointsData.map((wpData, index) => {
         const terrainElevation = elevations[index];
         const desiredAgl = wpData.options.altitude;
@@ -543,29 +539,28 @@ function FlightPlannerUI() {
         };
 
         setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
-        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        setWaypoints(prev => replaceMissionWaypoints(prev, oldWaypointIds, newWaypoints));
         toast({ title: t('surveyGridUpdated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
     } else {
+        const missionId = allocateIds('mission');
         const newMission: SurveyMission = {
-            id: missionCounter,
-            name: t('missionNameGrid', { id: missionCounter }),
+            id: missionId,
+            name: t('missionNameGrid', { id: missionId }),
             type: 'Grid',
             waypointIds: newWaypoints.map(wp => wp.id),
             parameters: { altitude, sidelap, frontlap, angle },
             polygon: surveyParams.polygon,
         };
         setMissions(prev => [...prev, newMission]);
-        setMissionCounter(prev => prev + 1);
         setWaypoints(prev => [...prev, ...newWaypoints]);
         toast({ title: t('surveyGridCreated'), description: `${t('surveyGridCreatedSuccess', { count: newWaypoints.length })} ${home.notice}`.trim() });
     }
 
-    setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
     setEditingMissionId(null);
     setSurveyParams(prev => ({...prev, polygon: []}));
 
-}, [surveyParams, toast, waypointCounter, missionCounter, editingMissionId, missions, t, settings.homeElevationMsl, resolveHomeElevationForMission]);
+}, [surveyParams, toast, editingMissionId, missions, t, settings.homeElevationMsl, resolveHomeElevationForMission, allocateIds]);
 
 const handleGenerateFacadeScan = useCallback(async () => {
     if (!facadeLine) {
@@ -605,7 +600,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
     if (home === null) return;
     const homeElevation = home.elevation;
 
-    let currentWpCounter = waypointCounter;
+    let currentWpCounter = allocateIds('waypoint', waypointsData.length);
     const newWaypoints: Waypoint[] = waypointsData.map((wpData) => {
         const desiredAgl = wpData.options.altitude;
 
@@ -637,29 +632,28 @@ const handleGenerateFacadeScan = useCallback(async () => {
             waypointIds: newWaypoints.map(wp => wp.id),
         };
         setMissions(prev => prev.map(m => m.id === editingMissionId ? updatedMission : m));
-        setWaypoints(prev => [...prev.filter(wp => !oldWaypointIds.has(wp.id)), ...newWaypoints]);
+        setWaypoints(prev => replaceMissionWaypoints(prev, oldWaypointIds, newWaypoints));
         toast({ title: t('facadeScanUpdated'), description: t('surveyGridCreatedSuccess', { count: newWaypoints.length }) });
 
     } else {
+        const missionId = allocateIds('mission');
         const newMission: SurveyMission = {
-            id: missionCounter,
-            name: t('missionNameFacade', { id: missionCounter }),
+            id: missionId,
+            name: t('missionNameFacade', { id: missionId }),
             type: 'Facade',
             waypointIds: newWaypoints.map(wp => wp.id),
             parameters: facadeParams,
             line: facadeLine,
         };
         setMissions(prev => [...prev, newMission]);
-        setMissionCounter(prev => prev + 1);
         setWaypoints(prev => [...prev, ...newWaypoints]);
         toast({ title: t('facadeScanCreated'), description: `${t('surveyGridCreatedSuccess', { count: waypointsData.length })} ${home.notice}`.trim() });
     }
 
-    setWaypointCounter(currentWpCounter);
     setActiveDialog(null);
     setEditingMissionId(null);
     setFacadeLine(null);
-}, [facadeLine, facadeParams, waypointCounter, toast, missionCounter, editingMissionId, missions, t, settings.homeElevationMsl, resolveHomeElevationForMission]);
+}, [facadeLine, facadeParams, toast, editingMissionId, missions, t, settings.homeElevationMsl, resolveHomeElevationForMission, allocateIds]);
 
   const handleDrawRadiusRequest = useCallback(() => {
     const centerPoi = pois.find(p => p.id === parseInt(orbitParams.poiId));
@@ -801,7 +795,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
         const targetPoi = pois.find(p => p.id === wp.targetPoiId);
         if (targetPoi) {
           const waypointAMSL = settings.homeElevationMsl + wp.altitude;
-          const poiAMSL = targetPoi.altitude;
+          const poiAMSL = getPoiAmsl(targetPoi, settings.homeElevationMsl);
           const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
           const newGimbalPitch = calculateRequiredGimbalPitch(waypointAMSL, poiAMSL, horizontalDistance);
           return { ...wp, gimbalPitch: newGimbalPitch };
@@ -853,7 +847,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
             const targetPoi = pois.find(p => p.id === wp.targetPoiId);
             if (targetPoi) {
                 const waypointAMSL = settings.homeElevationMsl + wp.altitude;
-                const poiAMSL = targetPoi.altitude;
+                const poiAMSL = getPoiAmsl(targetPoi, settings.homeElevationMsl);
                 const horizontalDistance = haversineDistance(wp.latlng, targetPoi.latlng);
                 const newGimbalPitch = calculateRequiredGimbalPitch(waypointAMSL, poiAMSL, horizontalDistance);
                 return { ...wp, gimbalPitch: newGimbalPitch };
@@ -886,16 +880,12 @@ const handleGenerateFacadeScan = useCallback(async () => {
         const text = e.target?.result as string;
         if (!text) throw new Error("File is empty or could not be read.");
         
-        const plan = JSON.parse(text) as FlightPlan;
-        
-        plan.waypoints.forEach(wp => { if (wp.latlng && !('lat' in wp.latlng)) { wp.latlng = { lat: (wp.latlng as any)._lat, lng: (wp.latlng as any)._lng } } });
-        plan.pois.forEach(p => { if (p.latlng && !('lat' in p.latlng)) { p.latlng = { lat: (p.latlng as any)._lat, lng: (p.latlng as any)._lng } } });
-
-        const errors = validateFlightPlanForImport(plan);
-        if (errors.length > 0) {
-          throw new Error(errors.map(errKey => t(errKey)).join('\n'));
+        // Only what the schema accepts reaches the app: the file may come from anyone.
+        const parsed = parseFlightPlan(JSON.parse(text));
+        if (!parsed.ok) {
+          throw new Error(parsed.errors.join('\n'));
         }
-        await loadFlightPlan(plan);
+        loadFlightPlan(parsed.plan);
         toast({ title: t('successTitle'), description: t('import_success') });
       } catch (err: any) {
         toast({ variant: "destructive", title: t('importError'), description: err.message });
@@ -905,26 +895,22 @@ const handleGenerateFacadeScan = useCallback(async () => {
     if (event.target) event.target.value = '';
   };
 
-  const loadFlightPlan = async (plan: FlightPlan) => {
-    setWaypoints([]);
-    setPois([]);
-    setMissions([]);
+  const loadFlightPlan = (plan: FlightPlan) => {
     setSelectedWaypointId(null);
     setMultiSelectedWaypointIds(new Set());
-    
+
+    settingsRef.current = plan.settings;
     setSettings(plan.settings);
-    
-    setPois(plan.pois || []);
-    setWaypoints(plan.waypoints || []);
-    setMissions(plan.missions || []);
+
+    setPois(plan.pois);
+    setWaypoints(plan.waypoints);
+    setMissions(plan.missions);
 
     const maxWpId = plan.waypoints.reduce((max, wp) => Math.max(max, wp.id), 0);
     const maxPoiId = plan.pois.reduce((max, p) => Math.max(max, p.id), 0);
-    const maxMissionId = (plan.missions || []).reduce((max, m) => Math.max(max, m.id), 0);
+    const maxMissionId = plan.missions.reduce((max, m) => Math.max(max, m.id), 0);
 
-    setWaypointCounter(maxWpId + 1);
-    setPoiCounter(maxPoiId + 1);
-    setMissionCounter(maxMissionId + 1);
+    nextIdsRef.current = { waypoint: maxWpId + 1, poi: maxPoiId + 1, mission: maxMissionId + 1 };
 
     if (plan.waypoints.length > 0) {
       selectWaypoint(plan.waypoints[0].id);
@@ -983,7 +969,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
     if (pois.length > 0) {
         poisKml += `<Folder><name>POIs</name>`;
         pois.forEach(p => { 
-            poisKml += `<Placemark><name>${p.name}</name><Point><altitudeMode>absolute</altitudeMode><coordinates>${p.latlng.lng},${p.latlng.lat},${p.altitude}</coordinates></Point></Placemark>`;
+            poisKml += `<Placemark><name>${escapeXml(p.name)}</name><Point><altitudeMode>absolute</altitudeMode><coordinates>${p.latlng.lng},${p.latlng.lat},${getPoiAmsl(p, homeElevationMSL).toFixed(2)}</coordinates></Point></Placemark>`;
         });
         poisKml += `</Folder>`;
     }
@@ -1013,9 +999,9 @@ const handleGenerateFacadeScan = useCallback(async () => {
     const totalDistance = calculateMissionDistance(waypoints);
     const totalDuration = calculateMissionDuration(waypoints, missionFlightSpeed);
 
-    const templateKml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:author>FlightPlanner</wpml:author><wpml:createTime>${createTimeMillis}</wpml:createTime><wpml:updateTime>${createTimeMillis}</wpml:updateTime><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo><wpml:payloadInfo><wpml:payloadEnumValue>0</wpml:payloadEnumValue><wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo></wpml:missionConfig></Document></kml>`;
+    const templateKml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:author>FlightPlanner</wpml:author><wpml:createTime>${createTimeMillis}</wpml:createTime><wpml:updateTime>${createTimeMillis}</wpml:updateTime><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:takeOffSecurityHeight>${TAKEOFF_SECURITY_HEIGHT_M}</wpml:takeOffSecurityHeight><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo><wpml:payloadInfo><wpml:payloadEnumValue>0</wpml:payloadEnumValue><wpml:payloadSubEnumValue>0</wpml:payloadSubEnumValue><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:payloadInfo></wpml:missionConfig></Document></kml>`;
     
-    let waylinesWpml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo></wpml:missionConfig><Folder><name>Wayline Mission ${waylineIdInt}</name><wpml:templateId>0</wpml:templateId><wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode><wpml:waylineId>0</wpml:waylineId><wpml:distance>${Math.round(totalDistance)}</wpml:distance><wpml:duration>${Math.round(totalDuration)}</wpml:duration><wpml:autoFlightSpeed>${missionFlightSpeed}</wpml:autoFlightSpeed>\n`;
+    let waylinesWpml = `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2" xmlns:wpml="http://www.dji.com/wpmz/1.0.2"><Document><wpml:missionConfig><wpml:flyToWaylineMode>safely</wpml:flyToWaylineMode><wpml:finishAction>goHome</wpml:finishAction><wpml:exitOnRCLost>executeLostAction</wpml:exitOnRCLost><wpml:executeRCLostAction>goBack</wpml:executeRCLostAction><wpml:takeOffSecurityHeight>${TAKEOFF_SECURITY_HEIGHT_M}</wpml:takeOffSecurityHeight><wpml:globalTransitionalSpeed>${missionFlightSpeed}</wpml:globalTransitionalSpeed><wpml:droneInfo><wpml:droneEnumValue>68</wpml:droneEnumValue><wpml:droneSubEnumValue>0</wpml:droneSubEnumValue></wpml:droneInfo></wpml:missionConfig><Folder><name>Wayline Mission ${waylineIdInt}</name><wpml:templateId>0</wpml:templateId><wpml:executeHeightMode>relativeToStartPoint</wpml:executeHeightMode><wpml:waylineId>0</wpml:waylineId><wpml:distance>${Math.round(totalDistance)}</wpml:distance><wpml:duration>${Math.round(totalDuration)}</wpml:duration><wpml:autoFlightSpeed>${missionFlightSpeed}</wpml:autoFlightSpeed>\n`;
 
     waypoints.forEach((wp, index) => {
         waylinesWpml += `    <Placemark>\n`;
@@ -1033,7 +1019,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
         } else if (effectiveHeadingControl === 'poi_track' && wp.targetPoiId != null) {
             const targetPoi = pois.find(p => p.id === wp.targetPoiId);
             if (targetPoi) {
-                const relativePoiAltitude = targetPoi.altitude - homeElevationMSL;
+                const relativePoiAltitude = getPoiAmsl(targetPoi, homeElevationMSL) - homeElevationMSL;
                 waylinesWpml += `        <wpml:waypointHeadingMode>towardPOI</wpml:waypointHeadingMode>\n`;
                 // WPML order is latitude,longitude,height (unlike KML <coordinates>).
                 waylinesWpml += `        <wpml:waypointPoiPoint>${targetPoi.latlng.lat.toFixed(6)},${targetPoi.latlng.lng.toFixed(6)},${relativePoiAltitude.toFixed(2)}</wpml:waypointPoiPoint>\n`;
@@ -1046,8 +1032,10 @@ const handleGenerateFacadeScan = useCallback(async () => {
         waylinesWpml += `        <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>\n`;
         waylinesWpml += `      </wpml:waypointHeadingParam>\n`;
         
+        // Survey photos are taken stopped on the point: passing through would blur or shift them.
+        const isSurveyPhoto = wp.cameraAction === 'takePhoto' && (wp.waypointType === 'grid' || wp.waypointType === 'facade');
         let turnMode;
-        if (wp.hoverTime > 0) {
+        if (wp.hoverTime > 0 || isSurveyPhoto) {
             turnMode = 'toPointAndStopWithDiscontinuityCurvature';
         } else if (missionPathType === 'straight') {
             turnMode = 'toPointAndStopWithDiscontinuityCurvature';
@@ -1069,8 +1057,8 @@ const handleGenerateFacadeScan = useCallback(async () => {
         }
         // Also for POI tracking: towardPOI only controls yaw, the gimbal pitch must be set explicitly.
         const clampedPitch = Math.max(-90, Math.min(60, wp.gimbalPitch));
-        actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable><wpml:gimbalPitchRotateAngle>${clampedPitch}</wpml:gimbalPitchRotateAngle><wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable><wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable><wpml:gimbalRotateTimeEnable>1</wpml:gimbalRotateTimeEnable><wpml:gimbalRotateTime>1</wpml:gimbalRotateTime><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
-        if (wp.cameraAction && wp.cameraAction !== 'none') {
+        actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:gimbalHeadingYawBase>north</wpml:gimbalHeadingYawBase><wpml:gimbalRotateMode>absoluteAngle</wpml:gimbalRotateMode><wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable><wpml:gimbalPitchRotateAngle>${clampedPitch}</wpml:gimbalPitchRotateAngle><wpml:gimbalRollRotateEnable>0</wpml:gimbalRollRotateEnable><wpml:gimbalRollRotateAngle>0</wpml:gimbalRollRotateAngle><wpml:gimbalYawRotateEnable>0</wpml:gimbalYawRotateEnable><wpml:gimbalYawRotateAngle>0</wpml:gimbalYawRotateAngle><wpml:gimbalRotateTimeEnable>1</wpml:gimbalRotateTimeEnable><wpml:gimbalRotateTime>1</wpml:gimbalRotateTime><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
+        if (KMZ_CAMERA_ACTIONS.has(wp.cameraAction)) {
             actionsXml += `<wpml:action><wpml:actionId>${actionCounter++}</wpml:actionId><wpml:actionActuatorFunc>${wp.cameraAction}</wpml:actionActuatorFunc><wpml:actionActuatorFuncParam><wpml:payloadPositionIndex>0</wpml:payloadPositionIndex></wpml:actionActuatorFuncParam></wpml:action>`;
         }
         if (actionsXml) {
@@ -1111,11 +1099,13 @@ const handleGenerateFacadeScan = useCallback(async () => {
   const handleMapClick = (latlng: LatLng, event: any) => {
     if (drawingState.mode) return;
     if (event.originalEvent.ctrlKey) {
+        const poiId = nextIdsRef.current.poi; // the ID addPoi reserves
         addPoi(latlng, poiName, poiHeight);
-        toast({ title: t('poiAdded'), description: t('poiCreated', { name: poiName || `POI ${poiCounter}` }) });
+        toast({ title: t('poiAdded'), description: t('poiCreated', { name: poiName || `POI ${poiId}` }) });
     } else {
+        const waypointId = nextIdsRef.current.waypoint; // the ID addWaypoint reserves
         addWaypoint(latlng);
-        toast({ title: t('waypointAdded'), description: t('waypointCreated', { count: waypointCounter }) });
+        toast({ title: t('waypointAdded'), description: t('waypointCreated', { count: waypointId }) });
     }
   };
 

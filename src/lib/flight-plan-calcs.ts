@@ -315,6 +315,23 @@ export function generateFacadeWaypoints(
     return finalWaypointsData;
 }
 
+// OpenTopoData allows one request per second. All elevation requests, also from
+// concurrent callers (e.g. quick POI clicks), go through this queue.
+export const ELEVATION_REQUEST_INTERVAL_MS = 1100;
+let elevationQueue: Promise<unknown> = Promise.resolve();
+let lastElevationRequestAt = -Infinity;
+
+export function scheduleElevationRequest<T>(request: () => Promise<T>): Promise<T> {
+    const run = elevationQueue.then(async () => {
+        const wait = lastElevationRequestAt + ELEVATION_REQUEST_INTERVAL_MS - Date.now();
+        if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+        lastElevationRequestAt = Date.now();
+        return request();
+    });
+    elevationQueue = run.catch(() => undefined);
+    return run;
+}
+
 export async function getElevationsBatch(locations: LatLng[]): Promise<(number | null)[]> {
     if (locations.length === 0) {
         return [];
@@ -328,14 +345,14 @@ export async function getElevationsBatch(locations: LatLng[]): Promise<(number |
         const locationsString = batch.map(loc => `${loc.lat.toFixed(6)},${loc.lng.toFixed(6)}`).join('|');
         
         try {
-            const response = await fetch(`/api/elevation`, {
+            const response = await scheduleElevationRequest(() => fetch(`/api/elevation`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ locations: locationsString }),
-            });
-            
+            }));
+
             if (!response.ok) {
                 console.error(`Elevation API Error: Status ${response.status}`);
                 continue; 
@@ -356,11 +373,8 @@ export async function getElevationsBatch(locations: LatLng[]): Promise<(number |
         } catch (error) {
             console.error("Exception during batch elevation fetch:", error);
         }
-        if (i + batchSize < locations.length) {
-            await new Promise(resolve => setTimeout(resolve, 1100));
-        }
     }
-    
+
     return results;
 }
 
@@ -372,54 +386,35 @@ function validateCoordinates(lat: number, lng: number): boolean {
          lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 }
 
-function validateAltitude(altitude: number): boolean {
-  return typeof altitude === 'number' && isFinite(altitude);
-}
-
 function validateGimbalPitch(pitch: number): boolean {
   return typeof pitch === 'number' && isFinite(pitch) && pitch >= -90 && pitch <= 60;
 }
 
-export function validateFlightPlanForImport(plan: any): string[] {
-    const errors: string[] = [];
-    if (!plan || typeof plan !== 'object') {
-        errors.push("Invalid file format: not a valid JSON object.");
-        return errors;
-    }
+// Escapes text for XML content and attribute values (KML/WPML export).
+export function escapeXml(value: unknown): string {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+}
 
-    if (plan.settings && typeof plan.settings === 'object') {
-        if (plan.settings.defaultAltitude && (typeof plan.settings.defaultAltitude !== 'number' || plan.settings.defaultAltitude < 1)) errors.push("Settings: Invalid default altitude.");
-        if (plan.settings.flightSpeed && (typeof plan.settings.flightSpeed !== 'number' || plan.settings.flightSpeed <= 0)) errors.push("Settings: Invalid flight speed.");
-        if (plan.settings.pathType && !['straight', 'curved'].includes(plan.settings.pathType)) errors.push("Settings: Invalid path type.");
-    } else {
-        errors.push("Flight plan is missing 'settings' object.");
-    }
+// AMSL altitude of a POI. Without terrain data the POI ground is assumed at the
+// takeoff elevation, instead of treating the object height as an AMSL altitude.
+export function getPoiAmsl(poi: POI, homeElevationMsl: number): number {
+    const ground = poi.terrainElevationMSL ?? homeElevationMsl;
+    return ground + poi.objectHeightAboveGround;
+}
 
-    if (plan.pois && Array.isArray(plan.pois)) {
-        plan.pois.forEach((p: any, i: number) => {
-            if (!p || typeof p !== 'object') { errors.push(`POI #${i+1}: Invalid data format.`); return; }
-            if (typeof p.id !== 'number') errors.push(`POI #${i+1}: Missing or invalid ID.`);
-            if (typeof p.name !== 'string') errors.push(`POI #${i+1} (ID ${p.id}): Missing or invalid name.`);
-            if (!p.latlng || !validateCoordinates(p.latlng.lat, p.latlng.lng)) errors.push(`POI #${i+1} (ID ${p.id}): Invalid coordinates.`);
-            if (p.objectHeightAboveGround && typeof p.objectHeightAboveGround !== 'number') errors.push(`POI #${i+1} (ID ${p.id}): Invalid object height.`);
-        });
-    }
-
-    if (plan.waypoints && Array.isArray(plan.waypoints)) {
-        plan.waypoints.forEach((wp: any, i: number) => {
-            if (!wp || typeof wp !== 'object') { errors.push(`Waypoint #${i+1}: Invalid data format.`); return; }
-            if (typeof wp.id !== 'number') errors.push(`Waypoint #${i+1}: Missing or invalid ID.`);
-            if (!wp.latlng || !validateCoordinates(wp.latlng.lat, wp.latlng.lng)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid coordinates.`);
-            if (typeof wp.altitude !== 'number') errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid altitude.`);
-            if (typeof wp.hoverTime !== 'number') errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid hover time.`);
-            if (typeof wp.gimbalPitch !== 'number' || !validateGimbalPitch(wp.gimbalPitch)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid gimbal pitch.`);
-            if (!['auto', 'fixed', 'poi_track', 'facade', 'grid', 'orbit'].includes(wp.headingControl)) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid heading control.`);
-            if (wp.headingControl === 'poi_track' && typeof wp.targetPoiId !== 'number' && wp.targetPoiId !== null) errors.push(`Waypoint #${i+1} (ID ${wp.id}): Invalid target POI ID.`);
-        });
-    } else {
-        errors.push("Flight plan is missing 'waypoints' array.");
-    }
-    return errors;
+// Replaces a mission's waypoints keeping its position in the route: the new
+// waypoints go where the first old one was (or at the end if none is left).
+export function replaceMissionWaypoints(waypoints: Waypoint[], oldIds: Set<number>, newWaypoints: Waypoint[]): Waypoint[] {
+    const insertAt = waypoints.findIndex(wp => oldIds.has(wp.id));
+    const kept = waypoints.filter(wp => !oldIds.has(wp.id));
+    if (insertAt === -1) return [...kept, ...newWaypoints];
+    // Everything before the first old waypoint is kept, so its index is unchanged in `kept`.
+    return [...kept.slice(0, insertAt), ...newWaypoints, ...kept.slice(insertAt)];
 }
 
 export interface WpmlValidationIssue {
@@ -432,6 +427,8 @@ export const DJI_ALTITUDE_MAX = 500;
 export const MIN_TERRAIN_CLEARANCE_M = 2;
 export const LOW_TERRAIN_CLEARANCE_M = 10;
 export const MAX_LEGAL_HEIGHT_M = 120;
+// DJI Fly may refuse longer missions: warn, do not block.
+export const DJI_FLY_MAX_WAYPOINTS = 200;
 
 // Errors block the export; warnings are shown but the export proceeds.
 export function validateFlightPlanForWpml(waypoints: Waypoint[], homeElevationMsl: number): { errors: WpmlValidationIssue[]; warnings: WpmlValidationIssue[] } {
@@ -484,6 +481,7 @@ export function validateFlightPlanForWpml(waypoints: Waypoint[], homeElevationMs
     if (lowClearance.length) warnings.push({ key: "warning_low_clearance", params: { wps: wps(lowClearance), min: LOW_TERRAIN_CLEARANCE_M } });
     if (aboveLegalHeight.length) warnings.push({ key: "warning_above_legal_height", params: { wps: wps(aboveLegalHeight), max: MAX_LEGAL_HEIGHT_M } });
     if (unknownTerrain.length) warnings.push({ key: "warning_unknown_terrain", params: { count: unknownTerrain.length } });
+    if (waypoints && waypoints.length > DJI_FLY_MAX_WAYPOINTS) warnings.push({ key: "warning_waypoint_count", params: { count: waypoints.length, max: DJI_FLY_MAX_WAYPOINTS } });
 
     return { errors, warnings };
 }

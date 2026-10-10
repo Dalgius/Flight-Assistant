@@ -17,12 +17,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useTranslation } from '@/hooks/use-translation';
+import { getPoiAmsl } from '@/lib/flight-plan-calcs';
 
-export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, deleteMission, editMission, poiName, setPoiName, poiHeight, setPoiHeight, updatePoi }: PanelProps) {
+export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, deleteMission, editMission, poiName, setPoiName, poiHeight, setPoiHeight, updatePoi, settings }: PanelProps) {
   const { t } = useTranslation();
-  
+
   const handlePoiUpdate = (poiId: number, field: 'objectHeightAboveGround' | 'terrainElevationMSL', value: string) => {
-    const poi = pois.find(p => p.id === poiId);
+    const poi = pois.find((p: POI) => p.id === poiId);
     if (!poi) return;
     
     const numValue = parseFloat(value);
@@ -92,7 +93,7 @@ export function PoisPanel({ onOpenDialog, pois, addPoi, deletePoi, missions, del
                       <LocateFixed className="w-5 h-5 text-accent shrink-0" />
                       <div className="flex-1">
                         <p className="font-semibold">{poi.name}</p>
-                        <p className="text-xs text-muted-foreground">{t('finalAmsl')}: {poi.altitude.toFixed(2)}m</p>
+                        <p className="text-xs text-muted-foreground">{t('finalAmsl')}: {getPoiAmsl(poi, settings.homeElevationMsl).toFixed(2)}m</p>
                       </div>
                       <Button variant="ghost" size="icon" className="w-8 h-8 text-muted-foreground hover:text-destructive" onClick={() => deletePoi(poi.id)}>
                         <Trash2 className="w-4 h-4" />

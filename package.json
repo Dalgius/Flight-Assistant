@@ -36,7 +36,7 @@
     "leaflet": "^1.9.4",
     "leaflet-geometryutil": "^0.10.2",
     "lucide-react": "^0.475.0",
-    "next": "^14.2.4",
+    "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
@@ -50,6 +50,8 @@
     "@types/node": "^20",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"

@@ -11,7 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ZoomIn, LocateFixed, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Waypoint, POI, LatLng, DrawingState, FlightPlanSettings } from './types';
-import { calculateBearing, createSmoothPath } from '@/lib/flight-plan-calcs';
+import { calculateBearing, createSmoothPath, getPoiAmsl } from '@/lib/flight-plan-calcs';
 import { useTranslation } from '@/hooks/use-translation';
 
 // Fix for default Leaflet icon path issue with bundlers
@@ -186,7 +186,8 @@ const createWaypointIcon = (waypoint: Waypoint, displayIndex: number, isSelected
             arrowColor = 'transparent';
         }
     } else if (waypoint.headingControl === 'fixed') {
-        headingAngleDeg = waypoint.fixedHeading;
+        // Coerced to a number: this value ends up in the marker's HTML.
+        headingAngleDeg = Number(waypoint.fixedHeading) || 0;
         arrowColor = '#607d8b';
     } else if (waypoint.headingControl === 'poi_track' && waypoint.targetPoiId !== null) {
         const targetPoi = pois.find(p => p.id === waypoint.targetPoiId);
@@ -298,7 +299,7 @@ const WaypointMarker = ({ waypoint, displayIndex, waypoints, pois, settings, isS
     );
 };
 
-const PoiMarker = ({ poi }: { poi: POI }) => {
+const PoiMarker = ({ poi, homeElevationMsl }: { poi: POI; homeElevationMsl: number }) => {
     const markerRef = useRef<L.Marker>(null);
     const { t } = useTranslation();
 
@@ -331,7 +332,7 @@ const PoiMarker = ({ poi }: { poi: POI }) => {
                 <div className="text-xs leading-snug">
                     <strong className="text-sm">{t('popupPoiTitle', { name: poi.name, id: poi.id })}</strong><br />
                     {t('popupLat')}: {poi.latlng.lat.toFixed(5)}, {t('popupLng')}: {poi.latlng.lng.toFixed(5)}<br />
-                    {t('popupFinalAmsl')}: {poi.altitude.toFixed(2)} m<br />
+                    {t('popupFinalAmsl')}: {getPoiAmsl(poi, homeElevationMsl).toFixed(2)} m<br />
                     {t('popupPoiTerrainElev')}: {terrainElevText}<br />
                     {t('popupPoiObjectHeight')}: {poi.objectHeightAboveGround.toFixed(2)} m
                 </div>
@@ -442,7 +443,7 @@ export function MapView(props: MapViewProps) {
               ))}
 
               {pois.map(p => (
-                  <PoiMarker key={p.id} poi={p} />
+                  <PoiMarker key={p.id} poi={p} homeElevationMsl={settings.homeElevationMsl} />
               ))}
             </MapContainer>
            
