@@ -33,7 +33,8 @@ const panelConfig = {
 
 export function SidePanel({ activePanel, onClose, ...props }: SidePanelProps) {
   const { t } = useTranslation();
-  const PanelComponent = activePanel ? panelConfig[activePanel].component : null;
+  // Every panel receives the full prop bag and picks what it needs.
+  const PanelComponent = activePanel ? panelConfig[activePanel].component as React.ComponentType<PanelProps> : null;
 
   return (
     <div

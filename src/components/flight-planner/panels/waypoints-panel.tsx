@@ -303,7 +303,7 @@ const MultiWaypointEditor = ({ pois, multiSelectedWaypointIds, updateWaypoint, c
                     <Select value={String(updates.targetPoiId || '')} onValueChange={(val) => handleValueChange('targetPoiId', val ? Number(val) : null)}>
                         <SelectTrigger><SelectValue placeholder={t('selectPoiPlaceholder')} /></SelectTrigger>
                         <SelectContent>
-                            {pois.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                            {pois.map((p: POI) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </div>
@@ -355,7 +355,7 @@ export function WaypointsPanel(props: PanelProps) {
 
   const selectedWaypointIndex = useMemo(() => {
     if (!selectedWaypoint) return -1;
-    return waypoints.findIndex(wp => wp.id === selectedWaypoint.id);
+    return waypoints.findIndex((wp: Waypoint) => wp.id === selectedWaypoint.id);
   }, [selectedWaypoint, waypoints]);
 
   const isAllSelected = waypoints.length > 0 && waypoints.length === multiSelectedWaypointIds.size;
