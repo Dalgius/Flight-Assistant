@@ -38,7 +38,7 @@ const headingControlSchema = z.preprocess(
 
 const settingsSchema = z.object({
   defaultAltitude: finite().min(1).max(500),
-  flightSpeed: finite().positive().max(20),
+  flightSpeed: finite().positive().max(15),
   pathType: z.enum(['straight', 'curved']),
   homeElevationMsl: finite(),
   altitudeAdaptationMode: z.enum(['relative', 'agl', 'amsl']),

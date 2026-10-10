@@ -275,21 +275,24 @@ export function generateFacadeWaypoints(
 
     const facadeLength = haversineDistance(startPoint, endPoint);
     
-    const numHorizontalPoints = facadeLength > 0 ? Math.floor(facadeLength / horizontalStep) + 1 : 1;
-    const numVerticalPoints = maxHeight > minHeight ? Math.floor((maxHeight - minHeight) / verticalStep) + 1 : 1;
+    // Rows and columns are spread evenly from edge to edge, so the end of the facade
+    // and its top are covered; the actual step is never larger than the requested one.
+    const numHorizontalPoints = facadeLength > 0 ? Math.ceil(facadeLength / horizontalStep) + 1 : 1;
+    const heightRange = maxHeight - minHeight;
+    const numVerticalPoints = heightRange > 0 ? Math.ceil(heightRange / verticalStep) + 1 : 1;
     if (numHorizontalPoints * numVerticalPoints > MAX_GENERATED_WAYPOINTS) return [];
-    
+
     let scanDirection = 1;
     const finalWaypointsData: GeneratedWaypointData[] = [];
 
     for (let i = 0; i < numVerticalPoints; i++) {
-        const currentHeight = Math.min(maxHeight, minHeight + i * verticalStep);
-        
+        const currentHeight = numVerticalPoints > 1 ? minHeight + (heightRange * i) / (numVerticalPoints - 1) : minHeight;
+
         for (let j = 0; j < numHorizontalPoints; j++) {
             let pointIndex = scanDirection === 1 ? j : (numHorizontalPoints - 1 - j);
-            
-            const fractionAlongFacade = numHorizontalPoints > 1 
-                                        ? Math.min(1, (pointIndex * horizontalStep) / facadeLength) 
+
+            const fractionAlongFacade = numHorizontalPoints > 1
+                                        ? pointIndex / (numHorizontalPoints - 1)
                                         : 0;
             
             const pointOnFacade = {

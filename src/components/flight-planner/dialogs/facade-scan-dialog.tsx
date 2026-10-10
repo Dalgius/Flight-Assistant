@@ -107,7 +107,7 @@ export function FacadeScanDialog({
 
                 <div className="space-y-2">
                     <Label htmlFor="gimbalPitch">{t('gimbalPitchLabel')}</Label>
-                    <Input id="gimbalPitch" type="number" value={params.gimbalPitch} onChange={e => handleNumberValueChange('gimbalPitch', e.target.value)} min={-90} max={30} />
+                    <Input id="gimbalPitch" type="number" value={params.gimbalPitch} onChange={e => handleNumberValueChange('gimbalPitch', e.target.value)} min={-90} max={60} />
                 </div>
                 </div>
             </ScrollArea>

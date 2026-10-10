@@ -23,21 +23,25 @@ L.Icon.Default.mergeOptions({
 });
 
 
+// Pointer movement below this is a tap, not a drag.
+const TAP_TOLERANCE_PX = 6;
+
 const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: DrawingState; onMapClick: (latlng: LatLng, event: any) => void; }) => {
     const map = useMap();
 
     // Drawing states
-    const [radiusLinePoints, setRadiusLinePoints] = useState<LatLng[] | null>(null);
     const [surveyPolygonPoints, setSurveyPolygonPoints] = useState<LatLng[]>([]);
-    const [angleLinePoints, setAngleLinePoints] = useState<LatLng[] | null>(null);
-    const [facadeLinePoints, setFacadeLinePoints] = useState<LatLng[] | null>(null);
+    // Line drawing (orbit radius, grid angle, facade) works by dragging, or with two taps:
+    // on touch screens the browser only reports where the finger was lifted.
+    // A ref, because touch fires mousedown and mouseup back to back, before React re-renders.
+    const lineRef = useRef<{ start: LatLng; pressedAt: L.Point; isFirstPress: boolean } | null>(null);
+    const [linePreview, setLinePreview] = useState<LatLng[] | null>(null);
 
     useEffect(() => {
         // Reset all drawing states when mode changes
-        setRadiusLinePoints(null);
         setSurveyPolygonPoints([]);
-        setAngleLinePoints(null);
-        setFacadeLinePoints(null);
+        lineRef.current = null;
+        setLinePreview(null);
 
         if (drawingState.mode) {
             map.getContainer().style.cursor = 'crosshair';
@@ -64,41 +68,43 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
             }
         },
         mousedown(e) {
-            if (drawingState.mode === 'orbitRadius' && drawingState.center) {
-                map.dragging.disable();
-                setRadiusLinePoints([drawingState.center, e.latlng]);
-            } else if (drawingState.mode === 'surveyAngle') {
-                map.dragging.disable();
-                setAngleLinePoints([e.latlng, e.latlng]);
-            } else if (drawingState.mode === 'facadeLine') {
-                map.dragging.disable();
-                setFacadeLinePoints([e.latlng, e.latlng]);
+            const mode = drawingState.mode;
+            if (mode !== 'orbitRadius' && mode !== 'surveyAngle' && mode !== 'facadeLine') return;
+            if (mode === 'orbitRadius' && !drawingState.center) return;
+            map.dragging.disable();
+            if (mode === 'orbitRadius') {
+                // The radius starts at the POI: one tap or one drag is enough.
+                lineRef.current = { start: drawingState.center!, pressedAt: e.containerPoint, isFirstPress: false };
+            } else if (!lineRef.current) {
+                lineRef.current = { start: e.latlng, pressedAt: e.containerPoint, isFirstPress: true };
+            } else {
+                // Second tap of a two-tap line.
+                lineRef.current = { ...lineRef.current, pressedAt: e.containerPoint, isFirstPress: false };
             }
+            setLinePreview([lineRef.current.start, e.latlng]);
         },
         mousemove(e) {
-            if (radiusLinePoints) {
-                setRadiusLinePoints([radiusLinePoints[0], e.latlng]);
-            } else if (angleLinePoints) {
-                setAngleLinePoints([angleLinePoints[0], e.latlng]);
-            } else if (facadeLinePoints) {
-                setFacadeLinePoints([facadeLinePoints[0], e.latlng]);
+            if (lineRef.current) {
+                setLinePreview([lineRef.current.start, e.latlng]);
             }
         },
         mouseup(e) {
-            if (radiusLinePoints) {
-                map.dragging.enable();
-                const radius = L.latLng(radiusLinePoints[0]).distanceTo(e.latlng);
-                drawingState.onComplete(radius);
-                setRadiusLinePoints(null);
-            } else if (angleLinePoints) {
-                map.dragging.enable();
-                const angle = calculateBearing(angleLinePoints[0], e.latlng);
-                drawingState.onComplete(angle);
-                setAngleLinePoints(null);
-            } else if (facadeLinePoints) {
-                map.dragging.enable();
-                drawingState.onComplete({ start: facadeLinePoints[0], end: e.latlng });
-                setFacadeLinePoints(null);
+            const line = lineRef.current;
+            if (!line) return;
+            map.dragging.enable();
+            if (line.isFirstPress && e.containerPoint.distanceTo(line.pressedAt) < TAP_TOLERANCE_PX) {
+                // A tap, not a drag: keep the start point and wait for the second tap.
+                lineRef.current = { ...line, isFirstPress: false };
+                return;
+            }
+            lineRef.current = null;
+            setLinePreview(null);
+            if (drawingState.mode === 'orbitRadius') {
+                drawingState.onComplete(L.latLng(line.start).distanceTo(e.latlng));
+            } else if (drawingState.mode === 'surveyAngle') {
+                drawingState.onComplete(calculateBearing(line.start, e.latlng));
+            } else if (drawingState.mode === 'facadeLine') {
+                drawingState.onComplete({ start: line.start, end: e.latlng });
             }
         }
     });
@@ -118,9 +124,9 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
 
     return (
         <>
-            {radiusLinePoints && <Polyline positions={radiusLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
-            {angleLinePoints && <Polyline positions={angleLinePoints} color="#f39c12" weight={3} dashArray="5, 5" />}
-            {facadeLinePoints && <Polyline positions={facadeLinePoints} color="#1abc9c" weight={3} dashArray="10, 10" />}
+            {linePreview && (drawingState.mode === 'facadeLine'
+                ? <Polyline positions={linePreview} color="#1abc9c" weight={3} dashArray="10, 10" />
+                : <Polyline positions={linePreview} color="#f39c12" weight={3} dashArray="5, 5" />)}
             {polygonPreview}
             {vertexMarkers}
         </>
@@ -458,7 +464,7 @@ export function MapView(props: MapViewProps) {
                         <TooltipContent><p>{t('tooltipFitToMission')}</p></TooltipContent>
                     </Tooltip>
                     <Tooltip>
-                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => mapRef.current?.locate()}><LocateFixed className="w-5 h-5" /></Button></TooltipTrigger>
+                        <TooltipTrigger asChild><Button variant="secondary" size="icon" onClick={() => mapRef.current?.locate({ setView: true, maxZoom: 16 })}><LocateFixed className="w-5 h-5" /></Button></TooltipTrigger>
                         <TooltipContent><p>{t('tooltipMyLocation')}</p></TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
