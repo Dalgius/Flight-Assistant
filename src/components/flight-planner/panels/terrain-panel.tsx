@@ -13,11 +13,12 @@ interface TerrainPanelProps extends PanelProps {
   settings: FlightPlanSettings;
   updateSettings: (newSettings: Partial<FlightPlanSettings>) => void;
   getHomeElevationFromFirstWaypoint: () => void;
+  setHomeElevation: (elevation: number) => void;
   adaptToAGL: () => void;
   adaptToAMSL: () => void;
 }
 
-export function TerrainPanel({ settings, updateSettings, getHomeElevationFromFirstWaypoint, adaptToAGL, adaptToAMSL }: TerrainPanelProps) {
+export function TerrainPanel({ settings, updateSettings, getHomeElevationFromFirstWaypoint, setHomeElevation, adaptToAGL, adaptToAMSL }: TerrainPanelProps) {
   const { t } = useTranslation();
 
   const pathModeDisplay = {
@@ -41,7 +42,7 @@ export function TerrainPanel({ settings, updateSettings, getHomeElevationFromFir
                 id="homeElevation" 
                 type="number" 
                 value={settings.homeElevationMsl} 
-                onChange={(e) => updateSettings({ homeElevationMsl: Number(e.target.value) })}
+                onChange={(e) => setHomeElevation(Number(e.target.value))}
               />
               <Button variant="secondary" onClick={getHomeElevationFromFirstWaypoint}>{t('useWp1Btn')}</Button>
             </div>
