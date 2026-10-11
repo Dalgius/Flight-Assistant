@@ -439,7 +439,7 @@ function FlightPlannerUI() {
             waypointType: 'orbit',
             hoverTime: 0,
             fixedHeading: 0,
-            cameraAction: 'none',
+            cameraAction: 'takePhoto',
             terrainElevationMSL: null,
         };
         newWaypoints.push(newWaypoint);
@@ -1041,10 +1041,10 @@ const handleGenerateFacadeScan = useCallback(async () => {
         waylinesWpml += `        <wpml:waypointHeadingPathMode>followBadArc</wpml:waypointHeadingPathMode>\n`;
         waylinesWpml += `      </wpml:waypointHeadingParam>\n`;
         
-        // Survey photos are taken stopped on the point: passing through would blur or shift them.
-        const isSurveyPhoto = wp.cameraAction === 'takePhoto' && (wp.waypointType === 'grid' || wp.waypointType === 'facade');
+        // Mission photos (grid, facade, orbit) are taken stopped on the point: passing through would blur or shift them.
+        const isStopPhoto = wp.cameraAction === 'takePhoto' && (wp.waypointType === 'grid' || wp.waypointType === 'facade' || wp.waypointType === 'orbit');
         let turnMode;
-        if (wp.hoverTime > 0 || isSurveyPhoto) {
+        if (wp.hoverTime > 0 || isStopPhoto) {
             turnMode = 'toPointAndStopWithDiscontinuityCurvature';
         } else if (missionPathType === 'straight') {
             turnMode = 'toPointAndStopWithDiscontinuityCurvature';
