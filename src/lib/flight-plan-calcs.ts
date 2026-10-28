@@ -250,37 +250,69 @@ export function generateSurveyGridWaypoints(
     return uniqueWaypoints.length > MAX_GENERATED_WAYPOINTS ? [] : uniqueWaypoints;
 }
 
+// Columns and rows of a facade scan, or null when the parameters cannot produce one.
+function facadeScanSize(startPoint: LatLng, endPoint: LatLng, params: FacadeScanParams): { numHorizontalPoints: number; numVerticalPoints: number } | null {
+    const { distance, minHeight, maxHeight, horizontalOverlap, verticalOverlap } = params;
+    if (!(distance > 0) || !isValidOverlap(horizontalOverlap) || !isValidOverlap(verticalOverlap)) return null;
+
+    const { sensorWidth_mm, sensorHeight_mm, focalLength_mm } = CAMERA_CONSTANTS;
+    const verticalStep = (sensorHeight_mm / focalLength_mm) * distance * (1 - verticalOverlap / 100);
+    const horizontalStep = (sensorWidth_mm / focalLength_mm) * distance * (1 - horizontalOverlap / 100);
+    if (!(verticalStep > 0) || !(horizontalStep > 0)) return null;
+
+    // Rows and columns are spread evenly from edge to edge, so the end of the facade
+    // and its top are covered; the actual step is never larger than the requested one.
+    const facadeLength = haversineDistance(startPoint, endPoint);
+    const heightRange = maxHeight - minHeight;
+    return {
+        numHorizontalPoints: facadeLength > 0 ? Math.ceil(facadeLength / horizontalStep) + 1 : 1,
+        numVerticalPoints: heightRange > 0 ? Math.ceil(heightRange / verticalStep) + 1 : 1,
+    };
+}
+
+// Number of waypoints a facade scan would generate (0 if the parameters are invalid).
+// May exceed MAX_GENERATED_WAYPOINTS, in which case generateFacadeWaypoints returns [].
+export function estimateFacadeWaypointCount(startPoint: LatLng, endPoint: LatLng, params: FacadeScanParams): number {
+    const size = facadeScanSize(startPoint, endPoint, params);
+    return size ? size.numHorizontalPoints * size.numVerticalPoints : 0;
+}
+
+// Highest overlaps, lowered together by the same amount, that keep the scan within
+// maxWaypoints. Null if even 0% overlap is not enough (or the parameters are invalid).
+export function fitFacadeOverlaps(startPoint: LatLng, endPoint: LatLng, params: FacadeScanParams, maxWaypoints: number): { horizontalOverlap: number; verticalOverlap: number } | null {
+    const highest = Math.max(params.horizontalOverlap, params.verticalOverlap);
+    for (let reduction = 0; reduction <= highest; reduction++) {
+        const candidate = {
+            ...params,
+            horizontalOverlap: Math.max(0, Math.floor(params.horizontalOverlap - reduction)),
+            verticalOverlap: Math.max(0, Math.floor(params.verticalOverlap - reduction)),
+        };
+        const count = estimateFacadeWaypointCount(startPoint, endPoint, candidate);
+        if (count > 0 && count <= maxWaypoints) {
+            return { horizontalOverlap: candidate.horizontalOverlap, verticalOverlap: candidate.verticalOverlap };
+        }
+    }
+    return null;
+}
+
 export function generateFacadeWaypoints(
   startPoint: LatLng,
   endPoint: LatLng,
   params: FacadeScanParams
 ): GeneratedWaypointData[] {
-    const { side, distance, minHeight, maxHeight, gimbalPitch, horizontalOverlap, verticalOverlap } = params;
-    
+    const { side, minHeight, maxHeight, gimbalPitch, distance } = params;
+
     const facadeBearing = calculateBearing(startPoint, endPoint);
-    
+
     const offsetAngle = (side === 'left') ? -90 : 90;
     const offsetBearing = (facadeBearing + offsetAngle + 360) % 360;
     const droneHeading = (facadeBearing - offsetAngle + 360) % 360;
 
-    const { sensorWidth_mm, sensorHeight_mm, focalLength_mm } = CAMERA_CONSTANTS;
-    const verticalFootprint = (sensorHeight_mm / focalLength_mm) * distance;
-    const horizontalFootprint = (sensorWidth_mm / focalLength_mm) * distance;
-    
-    if (!(distance > 0) || !isValidOverlap(horizontalOverlap) || !isValidOverlap(verticalOverlap)) return [];
-
-    const verticalStep = verticalFootprint * (1 - verticalOverlap / 100);
-    const horizontalStep = horizontalFootprint * (1 - horizontalOverlap / 100);
-    if (!(verticalStep > 0) || !(horizontalStep > 0)) return [];
-
-    const facadeLength = haversineDistance(startPoint, endPoint);
-    
-    // Rows and columns are spread evenly from edge to edge, so the end of the facade
-    // and its top are covered; the actual step is never larger than the requested one.
-    const numHorizontalPoints = facadeLength > 0 ? Math.ceil(facadeLength / horizontalStep) + 1 : 1;
-    const heightRange = maxHeight - minHeight;
-    const numVerticalPoints = heightRange > 0 ? Math.ceil(heightRange / verticalStep) + 1 : 1;
+    const size = facadeScanSize(startPoint, endPoint, params);
+    if (!size) return [];
+    const { numHorizontalPoints, numVerticalPoints } = size;
     if (numHorizontalPoints * numVerticalPoints > MAX_GENERATED_WAYPOINTS) return [];
+    const heightRange = maxHeight - minHeight;
 
     let scanDirection = 1;
     const finalWaypointsData: GeneratedWaypointData[] = [];

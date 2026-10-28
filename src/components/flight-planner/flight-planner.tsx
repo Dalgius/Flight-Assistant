@@ -1209,6 +1209,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
         onDrawLine={handleDrawFacadeLineRequest}
         onGenerateScan={handleGenerateFacadeScan}
         isLineDrawn={!!facadeLine}
+        line={facadeLine}
       />
     </div>
   );

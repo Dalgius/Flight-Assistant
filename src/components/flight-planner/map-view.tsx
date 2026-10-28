@@ -25,6 +25,8 @@ L.Icon.Default.mergeOptions({
 
 // Pointer movement below this is a tap, not a drag.
 const TAP_TOLERANCE_PX = 6;
+// Clicks this soon after a line is completed belong to that gesture and are ignored.
+const LINE_COMPLETION_CLICK_GUARD_MS = 400;
 
 const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: DrawingState; onMapClick: (latlng: LatLng, event: any) => void; }) => {
     const map = useMap();
@@ -36,6 +38,9 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
     // A ref, because touch fires mousedown and mouseup back to back, before React re-renders.
     const lineRef = useRef<{ start: LatLng; pressedAt: L.Point; isFirstPress: boolean } | null>(null);
     const [linePreview, setLinePreview] = useState<LatLng[] | null>(null);
+    // The browser fires "click" right after the mouseup that completes a line. By then the
+    // drawing mode may already be reset, and that click would add a stray waypoint.
+    const lineCompletedAtRef = useRef(0);
 
     useEffect(() => {
         // Reset all drawing states when mode changes
@@ -54,6 +59,7 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
 
     useMapEvents({
         click(e) {
+            if (Date.now() - lineCompletedAtRef.current < LINE_COMPLETION_CLICK_GUARD_MS) return;
             if (drawingState.mode === 'surveyArea') {
                 const newPoints = [...surveyPolygonPoints, e.latlng];
                 const clickTolerance = map.getZoom() > 15 ? 20 / (map.getZoom() - 14) : 20;
@@ -99,6 +105,7 @@ const MapInteractionManager = ({ drawingState, onMapClick }: { drawingState: Dra
             }
             lineRef.current = null;
             setLinePreview(null);
+            lineCompletedAtRef.current = Date.now();
             if (drawingState.mode === 'orbitRadius') {
                 drawingState.onComplete(L.latLng(line.start).distanceTo(e.latlng));
             } else if (drawingState.mode === 'surveyAngle') {

@@ -13,11 +13,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Building2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertTriangle, Building2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import type { FacadeScanParams } from '../types';
+import { useMemo } from 'react';
+import type { FacadeScanParams, LatLng } from '../types';
 import { useTranslation } from '@/hooks/use-translation';
-import { FACADE_MIN_DISTANCE_M, FACADE_MIN_HEIGHT_M } from '@/lib/flight-plan-calcs';
+import { DJI_FLY_MAX_WAYPOINTS, FACADE_MIN_DISTANCE_M, FACADE_MIN_HEIGHT_M, MAX_GENERATED_WAYPOINTS, estimateFacadeWaypointCount, fitFacadeOverlaps } from '@/lib/flight-plan-calcs';
 
 interface FacadeScanDialogProps {
   open: boolean;
@@ -28,19 +30,29 @@ interface FacadeScanDialogProps {
   onGenerateScan: () => void;
   isLineDrawn: boolean;
   isEditing: boolean;
+  line: { start: LatLng; end: LatLng } | null;
 }
 
-export function FacadeScanDialog({ 
-    open, 
-    onOpenChange, 
-    params, 
-    onParamsChange, 
-    onDrawLine, 
-    onGenerateScan, 
+export function FacadeScanDialog({
+    open,
+    onOpenChange,
+    params,
+    onParamsChange,
+    onDrawLine,
+    onGenerateScan,
     isLineDrawn,
-    isEditing
+    isEditing,
+    line
 }: FacadeScanDialogProps) {
     const { t } = useTranslation();
+
+    // Live waypoint estimate, and the overlaps that would bring it within DJI Fly's limit.
+    const estimate = useMemo(() => line ? estimateFacadeWaypointCount(line.start, line.end, params) : 0, [line, params]);
+    const fittedOverlaps = useMemo(
+        () => line && estimate > DJI_FLY_MAX_WAYPOINTS ? fitFacadeOverlaps(line.start, line.end, params, DJI_FLY_MAX_WAYPOINTS) : null,
+        [line, params, estimate]
+    );
+    const isOverCap = estimate > MAX_GENERATED_WAYPOINTS;
 
     const handleValueChange = (field: keyof FacadeScanParams, value: string | number) => {
         onParamsChange({ ...params, [field]: value });
@@ -98,13 +110,38 @@ export function FacadeScanDialog({
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                     <Label htmlFor="hOverlap">{t('hOverlap')}</Label>
-                    <Input id="hOverlap" type="number" value={params.horizontalOverlap} onChange={e => handleNumberValueChange('horizontalOverlap', e.target.value)} min={10} max={95} />
+                    <Input id="hOverlap" type="number" value={params.horizontalOverlap} onChange={e => handleNumberValueChange('horizontalOverlap', e.target.value)} min={0} max={95} />
                     </div>
                     <div className="space-y-2">
                     <Label htmlFor="vOverlap">{t('vOverlap')}</Label>
-                    <Input id="vOverlap" type="number" value={params.verticalOverlap} onChange={e => handleNumberValueChange('verticalOverlap', e.target.value)} min={10} max={95} />
+                    <Input id="vOverlap" type="number" value={params.verticalOverlap} onChange={e => handleNumberValueChange('verticalOverlap', e.target.value)} min={0} max={95} />
                     </div>
                 </div>
+
+                {line && estimate > 0 && (
+                    <p className="text-sm text-muted-foreground">{t('facadeEstimatedWaypoints', { count: estimate })}</p>
+                )}
+                {line && estimate > DJI_FLY_MAX_WAYPOINTS && (
+                    <Alert variant={isOverCap ? 'destructive' : 'default'}>
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription className="space-y-2">
+                            <p>{isOverCap
+                                ? t('facadeOverCap', { max: MAX_GENERATED_WAYPOINTS })
+                                : t('facadeOverDjiLimit', { max: DJI_FLY_MAX_WAYPOINTS })}</p>
+                            {fittedOverlaps ? (
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => onParamsChange({ ...params, ...fittedOverlaps })}
+                                >
+                                    {t('facadeFitOverlapsBtn', { h: fittedOverlaps.horizontalOverlap, v: fittedOverlaps.verticalOverlap })}
+                                </Button>
+                            ) : (
+                                <p>{t('facadeCannotFit', { max: DJI_FLY_MAX_WAYPOINTS })}</p>
+                            )}
+                        </AlertDescription>
+                    </Alert>
+                )}
 
                 <div className="space-y-2">
                     <Label htmlFor="gimbalPitch">{t('gimbalPitchLabel')}</Label>
