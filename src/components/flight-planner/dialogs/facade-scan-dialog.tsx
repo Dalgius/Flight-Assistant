@@ -17,6 +17,7 @@ import { Building2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { FacadeScanParams } from '../types';
 import { useTranslation } from '@/hooks/use-translation';
+import { FACADE_MIN_DISTANCE_M, FACADE_MIN_HEIGHT_M } from '@/lib/flight-plan-calcs';
 
 interface FacadeScanDialogProps {
   open: boolean;
@@ -80,13 +81,13 @@ export function FacadeScanDialog({
 
                 <div className="space-y-2">
                     <Label htmlFor="facadeDistance">{t('distanceFromFacade')}</Label>
-                    <Input id="facadeDistance" type="number" value={params.distance} onChange={e => handleNumberValueChange('distance', e.target.value)} min={5} />
+                    <Input id="facadeDistance" type="number" value={params.distance} onChange={e => handleNumberValueChange('distance', e.target.value)} min={FACADE_MIN_DISTANCE_M} step={0.5} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                     <Label htmlFor="minHeight">{t('minHeight')}</Label>
-                    <Input id="minHeight" type="number" value={params.minHeight} onChange={e => handleNumberValueChange('minHeight', e.target.value)} min={2} />
+                    <Input id="minHeight" type="number" value={params.minHeight} onChange={e => handleNumberValueChange('minHeight', e.target.value)} min={FACADE_MIN_HEIGHT_M} step={0.5} />
                     </div>
                     <div className="space-y-2">
                     <Label htmlFor="maxHeight">{t('maxHeight')}</Label>

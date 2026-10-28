@@ -5,7 +5,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useToast } from '@/hooks/use-toast';
 import type { PanelType, DialogType, Waypoint, POI, FlightPlanSettings, LatLng, FlightStatistics, DrawingState, SurveyGridParams, FacadeScanParams, GeneratedWaypointData, SurveyMission, FlightPlan } from '@/components/flight-planner/types';
-import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, destinationPoint, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints, getElevationsBatch, validateFlightPlanForWpml, calculateMissionDuration, calculateMissionDistance, normalizeHeading, isValidOverlap, escapeXml, getPoiAmsl, replaceMissionWaypoints, DJI_ALTITUDE_MIN, MIN_TERRAIN_CLEARANCE_M, type WpmlValidationIssue } from '@/lib/flight-plan-calcs';
+import { haversineDistance, calculateRequiredGimbalPitch, toRad, R_EARTH, destinationPoint, generateSurveyGridWaypoints, calculateBearing, generateFacadeWaypoints, getElevationsBatch, validateFlightPlanForWpml, calculateMissionDuration, calculateMissionDistance, normalizeHeading, isValidOverlap, escapeXml, getPoiAmsl, replaceMissionWaypoints, SURVEY_MIN_ALTITUDE_M, FACADE_MIN_DISTANCE_M, FACADE_MIN_HEIGHT_M, MIN_TERRAIN_CLEARANCE_M, type WpmlValidationIssue } from '@/lib/flight-plan-calcs';
 import { DEFAULT_SETTINGS, parseFlightPlan } from '@/lib/flight-plan-schema';
 import JSZip from 'jszip';
 
@@ -487,7 +487,7 @@ function FlightPlannerUI() {
       toast({ variant: "destructive", title: t('errorTitle'), description: t('invalidTakeoffElev') });
       return;
     }
-    if (!Number.isFinite(altitude) || altitude < DJI_ALTITUDE_MIN || !isValidOverlap(sidelap) || !isValidOverlap(frontlap) || !Number.isFinite(angle)) {
+    if (!Number.isFinite(altitude) || altitude < SURVEY_MIN_ALTITUDE_M || !isValidOverlap(sidelap) || !isValidOverlap(frontlap) || !Number.isFinite(angle)) {
         toast({ variant: "destructive", title: t('errorTitle'), description: t('invalidSurveyParams') });
         return;
     }
@@ -577,7 +577,7 @@ const handleGenerateFacadeScan = useCallback(async () => {
         return;
     }
     const { distance, minHeight, maxHeight, gimbalPitch, horizontalOverlap, verticalOverlap } = facadeParams;
-    if (!Number.isFinite(distance) || distance <= 0 || !Number.isFinite(minHeight) || !Number.isFinite(maxHeight) || !Number.isFinite(gimbalPitch) || minHeight >= maxHeight
+    if (!Number.isFinite(distance) || distance < FACADE_MIN_DISTANCE_M || !Number.isFinite(minHeight) || minHeight < FACADE_MIN_HEIGHT_M || !Number.isFinite(maxHeight) || !Number.isFinite(gimbalPitch) || minHeight >= maxHeight
         || !isValidOverlap(horizontalOverlap) || !isValidOverlap(verticalOverlap)) {
         toast({ variant: "destructive", title: t('errorTitle'), description: t('invalidFacadeParams') });
         return;

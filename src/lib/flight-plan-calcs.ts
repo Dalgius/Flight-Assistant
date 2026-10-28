@@ -425,8 +425,14 @@ export interface WpmlValidationIssue {
     params?: { [key: string]: string | number };
 }
 
-export const DJI_ALTITUDE_MIN = 2;
+// Lowest waypoint altitude accepted for export (relative to takeoff): facade scans may start 1 m above ground.
+export const DJI_ALTITUDE_MIN = 1;
 export const DJI_ALTITUDE_MAX = 500;
+// Facade scans: closest distance from the facade and lowest row height.
+export const FACADE_MIN_DISTANCE_M = 1;
+export const FACADE_MIN_HEIGHT_M = 1;
+// Survey grids stay at 2 m or more: a lower grid would only give tiny, overlapping photos.
+export const SURVEY_MIN_ALTITUDE_M = 2;
 export const MIN_TERRAIN_CLEARANCE_M = 2;
 export const LOW_TERRAIN_CLEARANCE_M = 10;
 export const MAX_LEGAL_HEIGHT_M = 120;
