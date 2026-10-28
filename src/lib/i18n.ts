@@ -143,6 +143,11 @@ export const translations: Translations = {
         "maxHeight": "Max Height (m)",
         "hOverlap": "Horizontal Overlap (%)",
         "vOverlap": "Vertical Overlap (%)",
+        "facadeEstimatedWaypoints": "Estimated waypoints: {count}",
+        "facadeOverDjiLimit": "More than {max} waypoints: DJI Fly may not accept this mission.",
+        "facadeOverCap": "More than {max} waypoints: the scan cannot be generated.",
+        "facadeFitOverlapsBtn": "Adapt overlaps ({h}% / {v}%)",
+        "facadeCannotFit": "Even with no overlap the scan needs more than {max} waypoints: increase the distance or split the facade into shorter sections.",
         "redrawLine": "Redraw Line",
         "startDrawingLine": "Start Drawing Line",
         "updateScan": "Update Scan",
@@ -256,7 +261,7 @@ export const translations: Translations = {
         "import_success": "Flight plan imported successfully!",
         "error_min_waypoints": "At least 2 waypoints are required for a mission.",
         "error_invalid_coordinates": "Invalid coordinates (WP {wps}).",
-        "error_altitude_range": "Altitude out of range (2-500m) (WP {wps}).",
+        "error_altitude_range": "Altitude out of range (1-500m) (WP {wps}).",
         "error_gimbal_range": "Gimbal pitch out of range (-90° to +60°) (WP {wps}).",
         "error_terrain_clearance": "Waypoints below the terrain or less than {min} m above it (WP {wps}).",
         "warning_low_clearance": "Waypoints less than {min} m above the terrain: the elevation model (SRTM 90 m) is not precise enough to rely on (WP {wps}).",
@@ -269,7 +274,7 @@ export const translations: Translations = {
         "invalidDesiredAgl": "Invalid Desired AGL. It must be a positive number.",
         "invalidDesiredAmsl": "Invalid Desired AMSL. It must be a valid number.",
         "invalidSurveyParams": "Invalid Survey Parameters. Altitude must be at least 2 m and overlaps between 0 and 99%.",
-        "invalidFacadeParams": "Invalid Facade Scan Parameters. Distance must be greater than 0, max height above min height and overlaps between 0 and 99%."
+        "invalidFacadeParams": "Invalid Facade Scan Parameters. Distance and min height must be at least 1 m, max height above min height and overlaps between 0 and 99%."
     },
     it: {
         // General & Titles
@@ -410,6 +415,11 @@ export const translations: Translations = {
         "maxHeight": "Altezza Max (m)",
         "hOverlap": "Sovrapposizione Orizz. (%)",
         "vOverlap": "Sovrapposizione Vert. (%)",
+        "facadeEstimatedWaypoints": "Waypoint stimati: {count}",
+        "facadeOverDjiLimit": "Più di {max} waypoint: DJI Fly potrebbe non accettare la missione.",
+        "facadeOverCap": "Più di {max} waypoint: la scansione non può essere generata.",
+        "facadeFitOverlapsBtn": "Adatta sovrapposizioni ({h}% / {v}%)",
+        "facadeCannotFit": "Anche senza sovrapposizione servono più di {max} waypoint: aumenta la distanza o dividi la facciata in tratti più corti.",
         "redrawLine": "Ridisegna Linea",
         "startDrawingLine": "Inizia a Disegnare",
         "updateScan": "Aggiorna Scansione",
@@ -523,7 +533,7 @@ export const translations: Translations = {
         "import_success": "Piano di volo importato con successo!",
         "error_min_waypoints": "Sono necessari almeno 2 waypoint per una missione.",
         "error_invalid_coordinates": "Coordinate non valide (WP {wps}).",
-        "error_altitude_range": "Altitudine fuori range (2-500m) (WP {wps}).",
+        "error_altitude_range": "Altitudine fuori range (1-500m) (WP {wps}).",
         "error_gimbal_range": "Pitch del gimbal fuori range (-90° a +60°) (WP {wps}).",
         "error_terrain_clearance": "Waypoint sotto il terreno o a meno di {min} m da esso (WP {wps}).",
         "warning_low_clearance": "Waypoint a meno di {min} m dal terreno: il modello di elevazione (SRTM 90 m) non è abbastanza preciso per fidarsi (WP {wps}).",
@@ -536,7 +546,7 @@ export const translations: Translations = {
         "invalidDesiredAgl": "AGL Desiderato non valido. Deve essere un numero positivo.",
         "invalidDesiredAmsl": "AMSL Desiderato non valido. Deve essere un numero valido.",
         "invalidSurveyParams": "Parametri Rilievo non validi. L'altitudine deve essere almeno 2 m e le sovrapposizioni fra 0 e 99%.",
-        "invalidFacadeParams": "Parametri Scansione Facciata non validi. La distanza deve essere maggiore di 0, l'altezza massima superiore alla minima e le sovrapposizioni fra 0 e 99%."
+        "invalidFacadeParams": "Parametri Scansione Facciata non validi. Distanza e altezza minima devono essere di almeno 1 m, l'altezza massima superiore alla minima e le sovrapposizioni fra 0 e 99%."
     }
 };
 
